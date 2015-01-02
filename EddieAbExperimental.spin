@@ -526,7 +526,7 @@ directionFlag                   long 1[2], 1[10]
 errorScaler                     long DEFAULT_ERROR_SCALER
  
 activeDemo                      byte DEFAULT_DEMO 'ARC_TEST_DEMO 'CAL_POS_PER_REV_DEMO 'CAL_DISTANCE_DEMO '
-demoFlag                        byte 0 ' set to 255 or -1 to continuously run demo
+demoFlag                        byte 1 ' set to 255 or -1 to continuously run demo
                                        ' other non-zero values will instuct the 
                                        ' program the number of times it should execute
                                        ' the method "ScriptedProgram".
@@ -808,17 +808,13 @@ PRI ExecuteAndWait(pointer)
   waitcnt(clkfreq * 3 + cnt) ' wait for motors to get some speed
   repeat while motorSpeed[0] or motorSpeed[1] or {
   } ||gDifference[0] > Header#TOO_SMALL_TO_FIX or ||gDifference[1] > Header#TOO_SMALL_TO_FIX
+    DisplayPositionError
   ' wait while motors are still turning and until the final destination is reached.
 
-PRI TempDebug(port) | freezeError[2], side, localColor
+PRI TempDebug(port) | side
 
   if ledMode == DISPLAY_POSITION_ERROR_LED
-    longmove(@freezeError, @gDifference, 2)
-    longfill(@fullBrightnessArray, 0, LEDS_IN_USE)
-    if freezeError[0] > freezeError[1]
-      OrColors(0, freezeError[0] - freezeError[1] - 1, $FF0000)
-    elseif freezeError[0] < freezeError[1]
-      OrColors(0, freezeError[1] - freezeError[0] - 1, $FF00)
+    DisplayPositionError
 
       {
     repeat side from 0 to 1
@@ -831,7 +827,7 @@ PRI TempDebug(port) | freezeError[2], side, localColor
         OrColors(0, (freezeError[side]  / errorScaler) - 1, localColor)
       elseif freezeError[side] < 0
         OrColors(MAX_LED_INDEX + (freezeError[side]  / errorScaler) + 1, MAX_LED_INDEX, localColor) }
-    AdjustAndSet(@fullBrightnessArray, brightness, LEDS_IN_USE)
+    
       
   if port <> USB_COM
     return
@@ -932,6 +928,16 @@ PRI TempDebug(port) | freezeError[2], side, localColor
   Com.Tx(port, 11)
   Com.Txe(port, 13)
 
+PUB DisplayPositionError | freezeError[2]
+
+  longmove(@freezeError, @gDifference, 2)
+  longfill(@fullBrightnessArray, 0, LEDS_IN_USE)
+  if freezeError[0] > freezeError[1]
+    OrColors(0, freezeError[0] - freezeError[1] - 1, $FF0000)
+  elseif freezeError[0] < freezeError[1]
+    OrColors(0, freezeError[1] - freezeError[0] - 1, $FF00)
+  AdjustAndSet(@fullBrightnessArray, brightness, LEDS_IN_USE)
+      
 PUB MotorControlStackDebug(port)
 
   Com.Str(port, string(11, 13, "Motor Control Stack = ", 11, 13))
@@ -2288,9 +2294,12 @@ introTempo                      byte "TEMPO 1500", 0
 endTempo                        byte "TEMPO 1500", 0
 finalTempo                      byte "TEMPO 1500", 0 }
 introSong                       byte "SONG 7", 0
-midSong                         byte "SONG 9", 0
+roachSong                       byte "SONG 8", 0
+catchMeIfYouCanSong             byte "SONG 9", 0
 endSong                         byte "SONG 3", 0
-finalSong                       byte "SONG 3", 0  
+someSuccessSong                 byte "SONG 3", 0  
+acknowledgeSong                 byte "SONG 5", 0
+alarmSong                       byte "SONG 11", 0
 
 leftCircleF149_50               byte "ARC -360 149 50", 0
 rightCircleF149_50              byte "ARC 360 149 50", 0
@@ -2334,15 +2343,24 @@ addressOffsetTest               word @addressOffsetTest
 twoByOneMRectanglePlusTwo8s     word @configDec
                                 word @introSong
                                 word @straightF2000mm50, @left90_50
+                                word @acknowledgeSong
                                 word @straightF1000mm50, @left90_50
+                                word @acknowledgeSong
                                 word @straightF2000mm50, @left90_50
-                                word @straightF1000mm50, @right180
+                                word @acknowledgeSong
+                                word @straightF1000mm50
+                                word @someSuccessSong, @right180
                                 word @straightF1000mm50, @right90_50
+                                word @acknowledgeSong
                                 word @straightF2000mm50, @right90_50
+                                word @acknowledgeSong
                                 word @straightF1000mm50, @right90_50
-                                word @straightF2000mm50, @left180
+                                word @straightF2000mm50
+                                word @someSuccessSong, @left180
                                 word @straightF1000mm50, @left90_50
+                                word @acknowledgeSong
                                 word @straightF500mm50
+                                word @catchMeIfYouCanSong
                                 word @rightCircleF299mm50, @leftCircleF299mm50
                                 word @rightCircleF500mm50, @leftCircleF500mm50, 0
 
