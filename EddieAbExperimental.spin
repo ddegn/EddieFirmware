@@ -440,7 +440,7 @@ CON
   MAX_LED_INDEX = LEDS_IN_USE
   DEFAULT_BRIGHTNESS = $3F
   #0, FROM_INPUT_LED, DISPLAY_POSITION_ERROR_LED
-  DEFAULT_LED_MODE = FROM_INPUT_LED 'DISPLAY_POSITION_ERROR_LED
+  DEFAULT_LED_MODE = DISPLAY_POSITION_ERROR_LED 'FROM_INPUT_LED '
   
 CON '' Cog Usage
 {{
@@ -588,7 +588,7 @@ PUB Main | rxcheck
   
   longfill(@stack, FILL_LONG, MOTOR_CONTROL_STACK_SIZE)
   result := cognew(PDLoop, @stack)                      ' Run the position controller in another core  
-  'Led.start(LED_PIN, LEDS_IN_USE)
+  Led.start(LED_PIN, LEDS_IN_USE)
 
   if debugFlag => INTRO_DEBUG
     Com.Strs(USB_COM, string(11, 13, "Eddie Firmware"))
@@ -2236,8 +2236,8 @@ PUB AdjustBrightness(color, localBrightness) | localIndex, temp
     
 PUB OrColors(firstLed, lastLed, localColor) : colorIndex
 
-  firstLed := 0 #> firstLed < MAX_LED_INDEX
-  lastLed := 0 #> lastLed < MAX_LED_INDEX
+  firstLed := 0 #> firstLed <# MAX_LED_INDEX
+  lastLed := 0 #> lastLed <# MAX_LED_INDEX
   repeat colorIndex from firstLed to lastLed
     fullBrightnessArray[colorIndex] |= localColor
 
