@@ -495,7 +495,7 @@ VAR
   long stillCnt[2] ' Number of iterations in a row that the motor hasn't moved
   long addressOffsetCorrection
   long activePositionAcceleration[2]
-  long fullBrightnessArray[LEDS_IN_USE]
+  long fullBrightnessArray[LEDS_IN_USE], gLimit[2]
   
   byte positionErrorFlag[2]
   byte pingsInUse, maxPingIndex
@@ -815,6 +815,12 @@ PRI TempDebug(port) | freezeError[2], side, localColor
   if ledMode == DISPLAY_POSITION_ERROR_LED
     longmove(@freezeError, @gDifference, 2)
     longfill(@fullBrightnessArray, 0, LEDS_IN_USE)
+    if freezeError[0] > freezeError[1]
+      OrColors(0, freezeError[0] - freezeError[1] - 1, $FF0000)
+    elseif freezeError[0] < freezeError[1]
+      OrColors(0, freezeError[1] - freezeError[0] - 1, $FF00)
+
+      {
     repeat side from 0 to 1
       if side
         localColor := $FF0000
@@ -824,7 +830,7 @@ PRI TempDebug(port) | freezeError[2], side, localColor
       if freezeError[side] > 0
         OrColors(0, (freezeError[side]  / errorScaler) - 1, localColor)
       elseif freezeError[side] < 0
-        OrColors(MAX_LED_INDEX + (freezeError[side]  / errorScaler) + 1, MAX_LED_INDEX, localColor)
+        OrColors(MAX_LED_INDEX + (freezeError[side]  / errorScaler) + 1, MAX_LED_INDEX, localColor) }
     AdjustAndSet(@fullBrightnessArray, brightness, LEDS_IN_USE)
       
   if port <> USB_COM
@@ -885,6 +891,9 @@ PRI TempDebug(port) | freezeError[2], side, localColor
  
       Com.Str(port, string(", gDifference = "))
       Com.Dec(port, gDifference[side])
+      Com.Str(port, string(", gLimit = "))
+      Com.Dec(port, gLimit[side])
+
       Com.Str(port, string(", setPosition = "))
       Com.Dec(port, setPosition[side])
       {'150102
@@ -1718,22 +1727,24 @@ PRI InterpolateMidVariables : side | difference  ' called from parsing cog
   longfill(@gDifference, 0, 2)
   longfill(@midVelAcc, 0, 2)
   longfill(@midPosAcc, 0, 2)
+  longmove(@midPosition, @motorPosition, 2)
+  longmove(@midVelocity, @motorSpeed, 2)
   
-  repeat side from LEFT_MOTOR to RIGHT_MOTOR
+  {repeat side from LEFT_MOTOR to RIGHT_MOTOR
 
     ' Determine midPosition to motorPosition offset
     if difference := targetPower[side] / kProportional[side]                
       if difference => DEADZONE   ' Adjust for the deadzone   
         difference -= DEADZONE 
       elseif difference =< -DEADZONE
-        difference += DEADZONE
+        difference += DEADZONE  
       midPosition[side] := motorPosition[side] + difference
       ' Add it back to the current Motor Position
     else 
-      midPosition[side] := motorPosition[side]
+      midPosition[side] := motorPosition[side] 
 
     ' Set the midVelocity to the current motor speed
-    midVelocity[side] := motorSpeed[LEFT_MOTOR] 
+    midVelocity[side] := motorSpeed[LEFT_MOTOR]  }
 
     
 PRI PDLoop : side | nextControlCycle
@@ -1867,7 +1878,7 @@ PRI PDIteration(side) | motorPositionSample, difference, limit
       midVelAcc[side] //= HALF_SEC 
        
       ' midPosition approaches setPosition as limited by the deceleration curve
-      limit := midVelocity[side] * HALF_SEC + midVelAcc[side] {
+      gLimit[side] := limit := midVelocity[side] * HALF_SEC + midVelAcc[side] {
       }<# ^^(constant(8 * HALF_SEC * HALF_SEC) * (setPosition[side] - midPosition[side])/ {
       } activePositionAcceleration[side]) * activePositionAcceleration[side] / 2
 
@@ -2204,8 +2215,8 @@ PUB AdjustAndSet(colorPtr, localBrightness, size)
 
   size--
   repeat result from 0 to size
-    Led.set(result, AdjustBrightness(long[colorPtr], localBrightness))
-
+    Led.set(result, AdjustBrightness(long[colorPtr][result], localBrightness))
+  
 PUB AdjustBrightness(color, localBrightness) | localIndex, temp
 
   repeat localIndex from 0 to 2
@@ -2214,9 +2225,10 @@ PUB AdjustBrightness(color, localBrightness) | localIndex, temp
     byte[@result][localIndex] := temp
     
 PUB OrColors(firstLed, lastLed, localColor) : colorIndex
-
+  
   firstLed := 0 #> firstLed <# MAX_LED_INDEX
   lastLed := 0 #> lastLed <# MAX_LED_INDEX
+
   repeat colorIndex from firstLed to lastLed
     fullBrightnessArray[colorIndex] |= localColor
 
