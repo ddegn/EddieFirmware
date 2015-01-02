@@ -88,7 +88,7 @@ OBJ
   '' The ADC object is required to use the "ADC" command
   Adc : "ActivityBoardAdc"                              ' 4-channel 12-bits
   Motors : "Servo32v9Shared"
-  Music : "s2_music141215a"                             ' uses one cog
+  Music : "s2_music"                                    ' uses one cog
   
 PUB InitAdc
 
