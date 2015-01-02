@@ -1,4 +1,3 @@
-DAT programName         byte "EddieC141231b", 0
 CON{{ ****** Public Notes ******
 
   As part of Parallax's Open Propeller Project #8, the code originally used
@@ -106,7 +105,8 @@ CON{{ ****** Public Notes ******
   "LS": Similar to GOSPD but used to set only the right speed.
   (targetSpeed[LEFT_MOTOR] becomes "active parameter" when used.)
   "LOW", "LOWS", "MIDV"
-  "NAME": Returns the name of the program in use. 
+  "MM": <distance in millimeters><speed> Similar to "TRVL" command but distance is received
+  in units of millimeters rather than encoder ticks.
   "OUT", "OUTS"
   "PATH": <distance left><distance right><speed> Similar to "TRVL" command but the distance
   travelled by the two wheels my differ. The speed (and acceleration) of the slower wheel
@@ -163,305 +163,6 @@ CON{{ ****** Public Notes ******
   "X": Turns off both motors.
   
 }}
-CON{
-  ****** Duane's Working Notes ******
-
-  Feel free to delete these notes.
-  141104a Download code from Parallax. Made a few formatting
-  changes to comply with Parallax Gold Standard.
-  04b Start changing ADC object to use the Activity Board's
-  ADC124S021 chip.
-  04c Abandon combined PWM and encoder driver.
-  04c Change VERSION constant to 14.
-  16d Power commands appear to work correctly, but speed commands
-  cause an oscillation.
-  17a Add commands to adjust "Kp" and other variables while the
-  program is running. Add "activeParameter" pointer to make adjusting
-  values easier.
-  17b Divide parsing task into separate sections of alphabet.
-  17d Try using more appropriate power units. Try to get rid of
-  code using "MAX_ON_TIME".
-  17e Looking promising. GO, GOX and SPD commands appear to be working.
-  The program does appear to lock up when in VELOCITY mode sometimes.
-  17f Add additional parameters which may be used as an "activeParameter".
-  17f The right motor's top meaningful power setting appears to be about 470.
-  The right motor's lowest power setting is about 70. At 70 power the
-  "MotorSpeed" is about 5. At 470 power the "MotorSpeed" is about 103 (100 - 108).
-  The max right power may be 466. At 400 power, the speed is about 80. At 300 power
-  the speed is about 54. At 200 power the speed is 32. At 100 the speed is 10.
-  The speed may be set as low as 1 but the speed control is not smooth below 5.
-  As speed settings higher than 104 the power is set at 500. When the speed is
-  set to 104 the power can drop to as low as 460.
-  TURN and TRVL appear to work well.
-  The value of Kp was set to 10 for these tests.
-  17g Try to add ARC command. What are the parameters to the command? According to
-  the comments "Turn a specified number of degrees around a circle of a specified radius".
-  So is it <radius> <degrees> <speed>?
-  I'll want to change the radius and degrees into distances of inside and outside
-  wheels.
-  Positive degrees will be a right turn and negative degrees a left turn. Radius will
-  be to the center of the robot.
-  So the radius will be half of "DISTANCE_BETWEEN_WHEELS = 395" changed from mm to
-  encoder ticks.
-  17g ARC command isn't finished yet. Revert back to this program once version "h"
-  is posted to forum
-  17h Clean up the code a little before posting to the forum.
-  Turn off decimal input and output. Turn off extra debugging.
-  18a Revert to 17g. Work on ARC command.
-  18b Comment out "InterpolateMidVariables" on speed only commands.
-  18b Speed commands still appear to work correctly.
-  18b One problem with ARC command is the slower motor will reach full speed before the
-  the fast motor/wheel. The acceleration of the slow motor/wheel needs to be set so
-  full speeds are reach together.
-  18f ARC command isn't working correctly yet. One wheel turned for a short time
-  when "ARC 720 200 50" was given. Right wheel turned a distance of 186 and left wheel
-  didn't move.
-  18h Attepted ARC without worrying about slow wheel ramping too fast and it worked!
-  I also added the "ScriptedProgram" method to test commands away from the computer.
-  My first attempt at a figure 8 looked great! I think I may have just earned my
-  robot parts.
-  19a Add "DEMO" command and move call to "ScriptedProgram" method to inside of the main
-  loop.
-  19c Have "ScriptedProgram" method remember the state of the "decInFlag" and restore
-  its original state once the demo script has been executed.
-  19f Big change. Switch to four port serial object which includes multi-cog and
-  multi-object support.
-  19f ARC command has creates very long distances when radius is small. I think program
-  calculated distances incorrectly if radius is less than bot's diameter.
-  19g Some improvement in the way the ARC parameters are calculated but I think the distance
-  calculation still has an error (absolute value causing a problem).
-  19h Get rid of "SetScaler" method and use 1000 as scaled multiplier.
-  When ARC radius is less than the bot radius, there's still a problem with the way
-  the speed and distances are calculated.
-  19h When I start demo, the motors appear to ramp up to speed correctly but then
-  the left motor doesn't stop.
-  19i Some things are working a bit better but there are still issues.
-  19j When Kp is set higher than 2 there appears to be some over shoot with the
-  demo command is issued.
-  The program frequently "locks up" and becomes rather unresponsive. Sometimes commands
-  like "HEAD" will still return data but motion commands are not carried out.
-  Whe the program locks up the demo command generates some debug information but the
-  motors don't move.
-  19m Without music object free space equals 4,162 longs. With music object added,
-  free space equals 1,515 longs
-  20a With trimmed version of music object there are 2,906 longs free.
-  Add "SONG" command. "TEMPO" command needed to go with "SONG" command.
-  The "SONG" command appears to work but now I need to add a volume command.
-  20b Add "VOL" command. The "VOL" command isn't working as hoped. The "Music"
-  object issues it's own volume commands. This object will need to be modified.
-  20c SONG command and friends appear to work correctly. The tempo may need to be
-  changed depending on which song is played.
-  20c I changed something so the demo mode produces "Encoder Error" messages.
-  20d I'm still getting encoder errors. I'm not sure this is a recent
-  problem or not.
-  For some reason the variable "PDRunning" gets set to zero.
-  20e Add a counter (pdlCount) to keep track of main control loop (PDLoop).
-  21a Big change in original code. There is now a Kp value for the left and
-  right motors. This value is inversely proportional to the set speed.
-  The TRVL command is working okay but the code really needs some sort of
-  error over time correction.
-  There's also a problem with the "PDRunning" variable being set to zero.
-  22a Big change. Add a port for second Propeller("PROP_COM"). I'll need to figure
-  out how to get board to receive commands from both the Prop and the PC.
-  Requests for data should use the same port for output as the request was
-  received on.
-  Change name of "DEBUG_COM" to "USB_COM".
-  23b Having trouble with Prop to Prop communication. Added a bunch of extra
-  debugging statements all over the place.
-  Commented out "SendChecksumResponse" calls and support code for NUL terminated
-  commands.
-  23c Finally working with "Cleaver141123b".
-  25a Attempt to add integral component.
-  25b Change the communication timeout variables and add "KILL" command to set
-  the communication timeout amount.
-  Make debugFlag capable of having more than just zero and one values. The
-  debugFlag variable can be used to indicate how much debug data is sent.
-  29c Calling the servo object from two different cogs is causing problems.
-  Either a single cog should call the object or the object should be modified
-  to use locks.
-  29d Change servo object to be respond better to multiple cogs.
-  1202a Try to move much of the debug statements to a separate cog.
-  Trying to figure out a good stategy to deal with the "controlCom" variable.
-  The "PROP_COM" should be the default com if a master Propeller is used on
-  a second board. However if the main communication is coming from a PC the
-  the USB_COM should be the default com.
-  If a com other than the default is used, the controlCom variable should revert
-  to the default after an exchange has been made.
-  1202a Increased Prop to Prop and Prop to PC baud to 57,600 from 19,200. This is
-  too fast for the four port serial object. Think about using a dedicated
-  cog for the Prop to Prop serial.
-  I need to figure out how to manage the cogs in a way to allow faster communication
-  from the master controller.
-  03a Undo a lot of the changes made in 1202a.
-  06a Change the object used to read the ping sensors.
-  07a Add "PNGP" and "PNGD" commands.
-  07a The "PNGP" command appears to work but the first PING command returns
-  the ping mask and delay rather than new readings.
-  07c Changed some names to make the program easier for me to read.
-  07c Compiles.
-
-  141207e Major fork! I'm going to attempt to write my own motor control algorithm.
-  Change "VELOCITY" mode's name to "SPEED" since the mode doesn't appear to control the
-  direction of the robot. I think I used SPEED in the past so it's a bit easier for me
-  to understand code which uses it. This isn't really a rational change.
-  I'm changing the names of lots of variables in my attempt to understand what's going
-  on with the code.
-  09a Speed buffers are mixed up. The speeds from the right wheel are ending up in the
-  left buffer.
-  09b Fixed issue with speed and acceleration buffers. Controlling the motor by setting
-  the power output appears to work. There are occational board resets. I'm not sure if
-  this is a hardware or software issue.
-  09c Add "NDD", "NDN", "NID" and "NIN" commands.
-  09d New adjusted kP technique didn't work well. anything but a zero value for the
-  "adjustableKP" caused a strong oscillation at speed of 2000.
-  09e The adjustable KP technique still doesn't work well.
-
-  141209f Major fork! I'm going to attempt to time encoder pulses in order to compute
-  speed.
-  09f The speed values are not computed correctly yet.
-  09g Add some global variables to help with debugging.
-  10a Speed measured from pulse times but my conversion constants are way off.
-  10b Attempt to fix speed conversion.
-  10b Starting to work but the speed seems off. The speed jumps around a lot.
-  10c The speed value averaged over 16 reads sure jumps around a lot. I must
-  have some bad data entering the buffer.
-  I think I'm missing some encoder ticks with the code.
-  10d Added the missing encoder ticks to the speed calculation and speed now
-  looks much better. There are still other issues.
-  10e Proportional control looked pretty good at low speeds but at 3000 there was a lot
-  of oscillation.
-  10f Why is full speed about 2700 instead of the expected 10,000?
-  I added an one second timer to check on the number of encoder ticks. Since the
-  debugging loop is checking the timer it's not very accurate. I should move it to
-  the control cog.
-  15a Add "NAME" command to return the name of the program.
-  15a Restore earlier "PDLoop" method.
-
-  Change name from Eddie141217a to EddieC141217a.
-  Major fork. Start using "FourQuadratureMotors140808a" object.
-  17a Move pin assignments to a header file to make it easier to switch which Propeller
-  board is used to control the robot.
-  18a Does not work. motorPosition keeps incrementing on its own without the wheels turning.
-  19a Revert to FourQuadratureMotors.
-  19b Change the way encoders are incremented and decremented in child object.
-  I could have switched encoder wires instead.
-  19b Sort of working with the new motor control driver. The variable "pasmSpeed"
-  holds the last pulse duration. The motorSpeed value is not being calcualted correctly.
-  20a Apparently 22 longs are used by the motor control stack.
-  20b Check Ping stack. 23 longs of the ping stack get used.
-  20c There is a problem with the motor control software. When the right motor is
-  used, the board will reset.
-  20c Replaced a lot of variable with gold standard formated ones.
-  Changed "stillCnt~" statements to "longfill(@stillCnt, 0, 2)". Previous version
-  was only setting a single element to zero.
-  20c Tried software on a different Propeller board and sill had a reset issue.
-  20d Start commenting out sections of code in an attempt to find the problem.
-  20d The "Prop" object wasn't causing the problem.
-  20e The "Ping" object also wasn't the problem.
-  20f The "Adc" oject also wasn't the problem (no surprise).
-  20g Big change. I changed a lot of the variable names to make them make more
-  sense to myself. The buffer now holds speed values rather than position values.
-  20g Still resets. The encoder count on the left wheel was 19120 at time of reset.
-  20h It was hardware after all! By powering the Activity Board from the USB line
-  the board no long reset.
-  The right motor is causing noise issues which has effected both boards I tried.
-  The noise problem was present when powered from a 3S 5Ah LiPo and when powered
-  from my bench supply.
-  21a Move "Adc" object to "Header" object so only a single object needs to be
-  changed when changing boards and drive type.
-  21b Big change to child motor control/encoder object.
-  21b Somehow the timing buffers are being written to incorrectly. The left
-  motor appears to receive the timing of the right motor.
-  21d Fixed problem with experimental buffer in child object. The speed isn't
-  averaged correctly. Instead of using zero speed when there's not encoder
-  transition, I should use the average speed.
-  21f Timed speed is starting to work correctly. I'll need to figure out a good
-  way of setting speed once motors have stopped. "xPeriodSpeed" displays the correct
-  speed but several of the other speed variables don't display zero speed when
-  the motors are stopped.
-  22a Tested code with h-bridge and power control appears to work.
-  Max power was 1000.
-  22b Try new code to monitor full cycles. New cycle speed code appears to work.
-  23a Add variable "speedUsedByControlAlgorithm" to various speed parameters may
-  be tested in control algorithm.
-  Set "MAX_POWER" to 1000. The power setting sections of code will need to be
-  modified if the motor control object uses a different resolution than 1000.
-  A speed setting of 100 produces a feedback speed of about 900.
-  23c Speed commands kind of work but if other command is called first the
-  speed gets messed up.
-  23d Add "adjustedTargetSpeed" which is scaled to better matched the new
-  measured speed. This did not work well. It caused heavy oscillations.
-  "adjustedTargetSpeed" abandoned.
-  24b Change "MAX_INPUT_SPEED" from 10,000 to 100. This value works better
-  with control algorithm in its present state.
-  Speed values may need to be scaled to make this firmware backwards compatible.
-  B141224b Test with h-bridge. The h-bridge driver works but I think the pin
-  assignments don't match the original Eddie board.
-  When testing hardware using firmware 1.3, go 64 64 (hex) produced a speed of 0042 0034 (66, 52).
-  24c Change constant "PROP_COM" to "ALT_COM". Change the name of the "Prop" object to
-  "AltCom" object. This object is presently not used.
-  24e Try using some of the previous constants.
-  25a Trying to get the program using a h-bridge to work at least as well as the original
-  code. Something with my updates causes the performance to decrease when compared with
-  the original Eddie code. Start adding back in the original h-bridge code.
-  25b Try to make it easy to switch between hardware versions. Move H-bridge object to header.
-  25c This is the version of code used in the video: http://youtu.be/jB0pSJ9Qbx4
-  25d Set debugFlag, decInFlag and decOutFlag to zero to make the program work with original
-  Eddie code in preparation to post changes to the forum.
-  26a Try (again) to add some sort of error over time component to motor control algorithm.
-  26c Getting close. The kIntegralNumerator had to be changed to 100 or the left wheel would
-  oscillate by one or two encoder ticks on either side of the target position.
-  The targetPower doesn't drop to zero once the setPosition is reached.
-  26d Try getting rid of the "DEADZONE" adjustments in the POSITION section of the
-  code.
-  26d Works great! Dead on.
-  26e Five revolutions of the wheels propelled the robot 2,417mm. The means the circumfrence
-  of the wheels are 483.4mm. The distance between the wheels measures 402mm. The distance
-  travelled by one encoder tick is 2,417mm / 720 = 3.3569444mm. The distance between wheels
-  is 119.75 encoder ticks. The circumfrence of robot is 376.11 encoder ticks
-  26f Set debugFlag, decInFlag and decOutFlag to zero to make the program work with original
-  Eddie code in preparation to post changes to the forum.
-  27a Fix bug where stillCnt was zeroed out using longfill when bytefill should have been used.
-  Change stillCnt to a long sized variable to allow great flexibility in timing shut off
-  from no movement.
-  28a Change demoFlag to 1. 
-  28e Try to get h-bridge hardware to zero out difference in position using the integral
-  component but the postion kept oscillating very slowly.
-  Added constants "DEFAULT_INTEGRAL_NUMERATOR" and "DEFAULT_INTEGRAL_DENOMINATOR". I'll
-  leave this constants in the header even though both sets of hardware presently use the
-  same values.
-  28f Test the demo script with the h-bridge hardware. The demo didn't work as well with
-  the h-bridge circuit.
-  28g Try to add some sort of flag to let script section of code know when the "POSITION"
-  algorithm is still trying to reach the goal.
-  Modify "ExecuteAndWait" method to wait until the position error is too small to correct.
-  28g Works great! The correction only occurs at the end of each maneuver but but waiting
-  for the correction greatly improves the accuracy of the course travelled.
-  28hx Try with "TOO_SMALL_TO_FIX" set to zero. This didn't work very well. It often took
-  the robot a long time (a minute or more) to position the encoders exactly.
-  Try again with "TOO_SMALL_TO_FIX" set to one.
-  28h The demo script worked much better with "TOO_SMALL_TO_FIX" set to one.
-  28h Version C hardware had a glitch just as it was performing the opperation
-  "ExecuteAndWait(@straightF500mm)".
-  29a Try to diagnose the glitch. The glitch doesn't occur when I isolate the maneuver.
-  I'm afraid it's my experimental encoder object which is causing the problem.
-  29b Relatively major change. Switch back to original encoder object.
-  29c Set debugFlag, decInFlag, decOutFlag and verbose to zero and set killSwitchTimer to
-  1000 milliseconds in order to make the program work with original Eddie code in preparation
-  to post changes to the forum.
-  29d Move script of the "ScriptedProgram" to make it easier to modify script used.
-  29e Add MIT License.
-  30c Remove "fastMotor" and "slowMotor" variables. They wheren't being used. It would
-  be good to use them in the future to limit the acceleration of the slower motor.
-  30d New "MM" and "ARCMM" commands work correctly. "PATH" hasn't been tested yet.
-  Moved some repeated code to methods.
-  31a Try again to use different acceleration rates when the "ARC" command is used.
-  This will mean separating the acceleration into a two element array.
-  Add "Music" object back. 2,668 longs free in C version of code.
-  The "Music" oject should be moved to the header object since the original Eddie hardware
-  didn't include an audio out jack.
-  
-}
 CON 
   
   _CLKMODE = XTAL1 + PLL16X
@@ -819,17 +520,17 @@ activeServo                     byte 6
 
 OBJ                             
                                 
-  Header : "HeaderEddieAbHb25Encoders141231a"           ' uses one cog for music
-  'Header : "HeaderEddieHbridgeEncoders141231a"          ' uses one cog
+  Header : "HeaderEddieAbHb25Encoders"                 ' uses one cog for music
+  'Header : "HeaderEddieHbridgeEncoders"                 ' uses one cog
   
   Encoders : "Quadrature_Encoder"                       ' uses one cog
-  Com : "Serial4Port141129a"                            ' uses one cog
-  Ping : "EddieJr1412506b"                              ' uses one cog
+  Com : "Serial4PortLocks"                              ' uses one cog
+  Ping : "EddiePingMonitor"                             ' uses one cog
   
   Servo : "Servo32v9Shared"                             ' uses one cog
   
   
-  'AltCom : "Serial4Port141203a"                         ' uses one cog
+  'AltCom : "Serial4PortLocksA"                         ' uses one cog
   '' The "AltCom" object allows commands to be received from I/O pins
   '' other than the ones used to communicate with the PC.
   '' This would allow communication with other devices such as a microcontroller
@@ -865,9 +566,8 @@ PUB Main | rxcheck
 
 
   if debugFlag => INTRO_DEBUG
-    Com.Strs(USB_COM, string(11, 13, "programName ="))
-    Com.Str(USB_COM, @programName)
-  
+    Com.Strs(USB_COM, string(11, 13, "Eddie Firmware"))
+   
     Com.Tx(USB_COM, 7) ' Bell sounds in terminal to catch reset issues
     waitcnt(clkfreq / 4 + cnt)
     Com.Tx(USB_COM, 7)
@@ -1089,9 +789,8 @@ PRI TempDebug(port)
               
   Com.Txs(port, 11)
   Com.Tx(port, 1) ' home
-  Com.Str(USB_COM, string(11, 13, "programName ="))
-  Com.Str(USB_COM, @programName)
-
+  Com.Str(USB_COM, string(11, 13, "Eddie Firmware"))
+  
   Com.Str(port, string(", mode = "))
   Com.Dec(port, mode)
   Com.Str(port, string(" = "))
@@ -1530,8 +1229,7 @@ PRI ParseJK | parameter[3]
   
 PRI ParseLN | parameter[3], index
 '' 6 Commands
-'' "L", "LOW", "LOWS", "LS:, "MIDV" ' 5
-'' "NAME" ' 1
+'' "L", "LOW", "LOWS", "LS:, "MIDV", "MM" ' 6
 
   if strcomp(@InputBuffer, string("L"))           ' Command: Set left motor to a specified power
     parameter[0] := ParseHex(NextParameter)         
@@ -1580,11 +1278,7 @@ PRI ParseLN | parameter[3], index
       ~parameter[1]
 
     Travel(parameter[0] * 1000 / Header#MICROMETERS_PER_TICK, parameter[1])
-  
-  elseif strcomp(@InputBuffer, string("NAME"))
-    CheckLastParameter
-    OutputStr(@programName)
- 
+
   else
     abort @invalidCommand
 

@@ -1,4 +1,3 @@
-DAT objectName          byte "EddieJr1412506b", 0
 CON{{ ****** Public Notes ******  
 
   This object fills an array with values read
@@ -16,17 +15,6 @@ CON{{ ****** Public Notes ******
   Uncomment the corresponding "Old Eddie" lines.
   
 }}
-CON{
-  ****** Duane's Working Notes ******
-  141206b Make the mask and delay separate
-  parameters when calling the Start method.
-  The previous techique of filling the
-  distance array with parameters is problematic
-  when updating the object since the values
-  stored in the array are overwritten by
-  the cog reading the Ping sensors.
-  
-}
 CON
 
   #0, CM_UNITS, TENTH_OF_INCH_UNITS
@@ -51,7 +39,7 @@ VAR
                                                           
 OBJ
 
-  Ping : "EddiePing141206a"
+  Ping : "EddiePing"
   
 PUB Start(pingMask, delayInMilliseconds, stackPtr)            'Start a new cog with the assembly routine
 '' The long immediately previous to the location
@@ -82,10 +70,6 @@ PUB Stop                        'Stop the currently running cog, if any
     cogstop(cog - 1)
     cog := 0
     pingsInUse := 0
-    
-PUB GetObjectName
-
-  result := @objectName
 
 PUB GetPingsInUse
 
@@ -125,3 +109,4 @@ PUB WatchPing(maxPingIndex) | pingIndex
       long[firstPingAddress][pingIndex] := result
       waitcnt(pingTimer += pingInterval)   
     long[countAddress]++
+    

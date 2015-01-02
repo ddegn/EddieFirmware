@@ -1,8 +1,6 @@
-DAT objectName          byte "HeaderEddieAbHb25Encoders141231b", 0
 CON{{ ****** Public Notes ******
 
-  This header file should be used with robots using the Propeller Activity Board
-  and HB-25 Motor controllers.
+  This header file should be used with robots using an Eddie Controller Board.
   This firmware update is part of the Open Propeller Project #8. For more information
   about this project see the following thread in the Parallax forum.
   
@@ -14,43 +12,32 @@ CON{{ ****** Public Notes ******
   The hardware specific objects are included in this header. This allows updates
   to the Eddie firmware to be easily applied to both robots using the original
   Eddie harware and to robots using the Arlo hardware.
-
+  
 }}
-CON{
-  ****** Duane's Working Notes ******
+CON '' Eddie Board Constants  
 
-  Feel free to delete these notes.
+    ' Encoders
+  ENCODERS_PIN = 8
   
-  141217a Move pin assignments to a header file to make it easier to switch which Propeller
-  board is used to control the robot.
-  29a Remove unneeded methods and constants.
-  31b A few small changes in preparation to upload to GitHub.
-  
-}  
-CON '' Activity Board Constants
-  
-  ' Encoders
-  ENCODERS_PIN = 14
-
-  ENABLE_0 = 12
-  ENABLE_1 = 13
+  ' Solid-state Relays
+  SSR_A = 16                                            
+  SSR_B = 17                                            
+  SSR_C = 18                                            
  
-  ' ADC (Activity Board)
-  ADC_CS = 21                                        
-  ADC_SCL = 20 
-  ADC_DO = 19 
-  ADC_DI = 18
-
+  ' ADC (Eddie Board)
+  ADC_CS = 25
+  ADC_SCL = 27 
+  ADC_DIO = 26 
   
 CON 
- 
+
   '' distance travelled per encoder tick = 2,455mm / 720 = 3.410mm
   '' bot radius = 59.52 ticks 
   MICROMETERS_PER_TICK = 3410                           '' User changeable
   POSITIONS_PER_ROTATION = 748 ' 744                    '' User changeable
   ' "POSITIONS_PER_ROTATION" is the distance one wheel needs to travel to rotate the
   ' robot a full revolution while one wheel remains stationary.
-  
+
   ' Motor names
   #0
   LEFT_MOTOR
@@ -62,21 +49,21 @@ CON
   PING_1 = 1                                            '' User changeable
   PINGS_IN_USE = 2                                      '' User changeable
   INITIAL_PING = |< PING_0 | |< PING_1                  '' User changeable
-   
+  
   ' PC COMMUNICATION
   USB_TX = 30 
   USB_RX = 31
   
   ' PROP TO PROP COMMUNICATION
-  ALT_TX = 10                                          '' User changeable
-  ALT_RX = 11                                          '' User changeable
+  ALT_TX = ENCODERS_PIN + 4 '(12)                       '' User changeable 
+  ALT_RX = 11                                           '' User changeable
 
   ' Master GPIO mask (Only high pins can be set as outputs)
-  OUTPUTABLE = %00001100_00000000_00000011_11111111 
+  OUTPUTABLE = %00000000_00000111_00001111_11111111
   PINGABLE = %00000000_00000000_00000011_11111111
   SERVOABLE = PINGABLE
   MAX_ALLOWED_PINGS = 10
-
+ 
   INITIAL_GPIO = OUTPUTABLE & !INITIAL_PING
   
   ' Terminal Settings
@@ -84,13 +71,9 @@ CON
   USB_BAUD = 115_200                                    '' User changeable
   ALT_BAUD = 115_200                                    '' User changeable
 
-  MAX_POWER = 7520
+  MAX_POWER = Motors#MAX_ON_TIME
 
-  SCALED_POWER = MAX_POWER / 500
- 
-  STOP_PULSE = 1_500
-
-  TOO_SMALL_TO_FIX = 0                                  '' User changeable
+  TOO_SMALL_TO_FIX = 1                                  '' User changeable
   DEFAULT_INTEGRAL_NUMERATOR = 200                      '' User changeable
   DEFAULT_INTEGRAL_DENOMINATOR = 100                    '' User changeable
   
@@ -98,43 +81,41 @@ OBJ
 
   '' The analog to digital converter object does not start a new cog.
   '' The ADC object is required to use the "ADC" command
-  Adc : "ActivityBoardAdc141221a"             ' 4-channel 12-bits
-  Motors : "Servo32v9Shared"
-  Music : "s2_music141215a"                             ' uses one cog
+
+  Adc : "EddieBoardAdc"                                 ' 8-channel 10-bits (scaled to 12-bits)
+  Motors : "Eddie Motor Driver"                        ' Uses 1 cog
   
 PUB InitAdc
 
-  Adc.Init(ADC_CS, ADC_SCL, ADC_DI, ADC_DO)
-    
+  Adc.Init(ADC_CS, ADC_SCL, ADC_DIO)
+
 PUB StartMotors
 
   Motors.Start
 
 PUB SetMotorPower(side, power)
 
-  Motors.Set(enablePin[side], STOP_PULSE + (power / SCALED_POWER))
-
+  if side == RIGHT_MOTOR
+    Motors.Right(power)
+  else
+    Motors.Left(power)
+    
 PUB ReadAdc(ch)
 
   result := Adc.Read(ch)
-  
-PUB GetObjectName
 
-  result := @objectName
-                         
 PUB InitMusic(volume)
-
-  Music.start_tones
-  Music.SetVolume(volume)
+'' This method is included to make this object compatible with
+'' the parent object which is shared amoung two versions of
+'' Eddie firmware .   
 
 PUB PlaySong(songId, tempo)
-
-  Music.play_song(songId, tempo)
+'' This method is included to make this object compatible with
+'' the parent object which is shared amoung two versions of
+'' Eddie firmware .   
 
 PUB SetVolume(volume)
-
-  Music.SetVolume(volume)
-  
-DAT
-
-enablePin     long ENABLE_0, ENABLE_1
+'' This method is included to make this object compatible with
+'' the parent object which is shared amoung two versions of
+'' Eddie firmware .   
+   
