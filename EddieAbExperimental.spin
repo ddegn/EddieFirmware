@@ -75,6 +75,19 @@ CON{{ ****** Public Notes ******
   "BLNK" 
   "BRT": <brightness> Set the brightness of the WS2812x LEDs. Range from zero (off) to
   $FF (full brightness). 
+  "COLOR": <channel><color in hexadecimal> Set the color of a single WS2812x LEDs. The range
+  for the channel parameter is from zero to MAX_LED_INDEX. The range for the color parameter
+  is zero to $FFFFFF. The color is received in hexadecimal notation even if the decInFlag
+  has been set. The colors will be adjusted by the value of "brightness" before being sent
+  to the WS2811 driver. The red value is the most significant byte. To set the first LED
+  to read use the command "COLOR 0 FF0000", to set the second LED green use "COLOR 1 FF00".
+  To set the third LED blue use "COLOR 2 FF".
+  "COLOR": <first channel><last channel><color in hexadecimal> Set the color of multiple
+  WS2812x LEDs. The range for the two channel parameters is from zero to MAX_LED_INDEX.
+  The range for the color parameter is the same for the command "COLOR".
+  To set the second through fifth LED white use the command "COLORS 1 4 FFFFFF". As with
+  the "COLOR" command the color parameter is received in hexadecimal notation even if the
+  decInFlag has been set.  
   "DEBUG": Set the debugFlag value. When debugFlag is set extra data will
   be sent to the PC.
   "DECIN": When set, the program will accept decimal input rather than hexadecimal.
@@ -1003,8 +1016,8 @@ PRI Parse                                               '' Parse the command in 
   return 0
 
 PRI ParseAF | index, parameter[3]
-'' 12 Commands (including soon to be added "ARC")
-'' "ACC", "ADC", "ARC", "BIG", "BLNK"  ' 5
+'' 15 Commands 
+'' "ACC", "ADC", "ARC", "BIG", "BLNK", "BRT", "COLOR", "COLORS"  ' 8
 '' "DEBUG", "DECIN", "DECOUT", "DEMO", "DEMOID", "DIFF", "DIST" ' 7
    
   if strcomp(@InputBuffer, string("ACC"))
