@@ -1710,30 +1710,6 @@ PRI ExtraHeadingDebug(heading)
   Com.Tx(USB_COM, 11) ' clear end
   Com.Txe(USB_COM, 13)
 
-PRI InterpolateMidVariablesOld : side | difference  ' called from parsing cog
-'' Sets midVelocity and midPosition variables to values that would create the current
-'' targetPower at the current motorPosition
-
-  bytefill(@midReachedSetFlag, 0, 2)
-
-  repeat side from LEFT_MOTOR to RIGHT_MOTOR
-
-    ' Determine midPosition to motorPosition offset
-    if difference := targetPower[side] / kProportional[side]                
-      if difference => DEADZONE   ' Adjust for the deadzone   
-        difference -= DEADZONE 
-      elseif difference =< -DEADZONE
-        difference += DEADZONE
-      midPosition[side] := motorPosition[side] + difference
-      ' Add it back to the current Motor Position
-    else 
-      midPosition[side] := motorPosition[side]
-    midPosAcc[side]~                                ' Clear the fractional part
-  
-    ' Set the midVelocity to the current motor speed
-    midVelocity[side] := motorSpeed[LEFT_MOTOR] 
-    midVelAcc[side]~        ' Clear the fractional part
- 
 PRI InterpolateMidVariables : side | difference  ' called from parsing cog
 '' Sets midVelocity and midPosition variables to values that would create the current
 '' targetPower at the current motorPosition
