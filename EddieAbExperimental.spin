@@ -436,9 +436,11 @@ CON
   DEC_IN_RESTORE_POS = 6
 
   LED_PIN = 8
-  LEDS_IN_USE = 5
+  LEDS_IN_USE = 10
   MAX_LED_INDEX = LEDS_IN_USE
   DEFAULT_BRIGHTNESS = $3F
+  #0, FROM_INPUT_LED, DISPLAY_POSITION_ERROR_LED
+  DEFAULT_LED_MODE = FROM_INPUT_LED 'DISPLAY_POSITION_ERROR_LED
   
 CON '' Cog Usage
 {{
@@ -539,6 +541,7 @@ verbose                         byte true 'false '      ' Verbosity level (Curre
 
 activeServo                     byte 6
 brightness                      byte DEFAULT_BRIGHTNESS
+ledMode                         byte DEFAULT_LED_MODE
 
 OBJ                             
                                 
@@ -585,7 +588,7 @@ PUB Main | rxcheck
   
   longfill(@stack, FILL_LONG, MOTOR_CONTROL_STACK_SIZE)
   result := cognew(PDLoop, @stack)                      ' Run the position controller in another core  
-  Led.start(LED_PIN, LEDS_IN_USE)
+  'Led.start(LED_PIN, LEDS_IN_USE)
 
   if debugFlag => INTRO_DEBUG
     Com.Strs(USB_COM, string(11, 13, "Eddie Firmware"))
@@ -595,7 +598,8 @@ PUB Main | rxcheck
     Com.Tx(USB_COM, 7)
     waitcnt(clkfreq / 4 + cnt)
     Com.Txe(USB_COM, 7)
-  
+    
+  'ExecuteStoredCommand(@introSong)
     
   activeParameter := @targetPower[RIGHT_MOTOR]
   activeParTxtPtr := @targetPowerRTxt
@@ -804,8 +808,23 @@ PRI ExecuteAndWait(pointer)
   } ||gDifference[0] > Header#TOO_SMALL_TO_FIX or ||gDifference[1] > Header#TOO_SMALL_TO_FIX
   ' wait while motors are still turning and until the final destination is reached.
 
-PRI TempDebug(port)
+PRI TempDebug(port) | freezeError[2], side, localColor
 
+  if ledMode == DISPLAY_POSITION_ERROR_LED
+    longmove(@freezeError, @gDifference, 2)
+    longfill(@fullBrightnessArray, 0, LEDS_IN_USE)
+    repeat side from 0 to 1
+      if side
+        localColor := $FF0000
+      else
+        localColor := $FF00
+          
+      if freezeError[side] > 0
+        OrColors(0, freezeError[side] - 1, localColor)
+      elseif freezeError[side] < 0
+        OrColors(MAX_LED_INDEX + freezeError[side] + 1, MAX_LED_INDEX, localColor)
+    AdjustAndSet(@fullBrightnessArray, brightness, LEDS_IN_USE)
+      
   if port <> USB_COM
     return
               
@@ -842,42 +861,42 @@ PRI TempDebug(port)
     Com.Str(port, string(", "))
     Com.Dec(port, pingResults[1])
   
-  repeat result from 0 to 1
+  repeat side from 0 to 1
     if debugFlag => POWER_DEBUG
       Com.Str(port, string(11, 13, 11, 13, "targetPower["))
-      Com.Dec(port, result)
+      Com.Dec(port, side)
       Com.Str(port, string("] = "))
-      Com.Dec(port, targetPower[result])
+      Com.Dec(port, targetPower[side])
       Com.Str(port, string(", rampedPower = "))
-      Com.Dec(port, rampedPower[result])
+      Com.Dec(port, rampedPower[side])
       Com.Str(port, string(", targetPower = "))
-      Com.Dec(port, targetPower[result])
+      Com.Dec(port, targetPower[side])
       Com.Str(port, string(", difference = "))
-      Com.Dec(port, targetPower[result] - rampedPower[result])
+      Com.Dec(port, targetPower[side] - rampedPower[side])
      
     if debugFlag => PID_SPEED_DEBUG
      
       Com.Str(port, string(11, 13, "targetSpeed["))
-      Com.Dec(port, result)
+      Com.Dec(port, side)
       Com.Str(port, string("] = "))
-      Com.Dec(port, targetSpeed[result])
+      Com.Dec(port, targetSpeed[side])
  
       Com.Str(port, string(", gDifference = "))
-      Com.Dec(port, gDifference[result])
+      Com.Dec(port, gDifference[side])
       Com.Str(port, string(", setPosition = "))
-      Com.Dec(port, setPosition[result])
+      Com.Dec(port, setPosition[side])
       Com.Str(port, string(", integral = "))
-      Com.Dec(port, integral[result])
+      Com.Dec(port, integral[side])
       Com.Str(port, string(11, 13, "motorPosition["))
-      Com.Dec(port, result)
+      Com.Dec(port, side)
       Com.Str(port, string("] = "))
-      Com.Dec(port, motorPosition[result])       
+      Com.Dec(port, motorPosition[side])       
       Com.Str(port, string(", motorSpeed = "))
-      Com.Dec(port, motorSpeed[result])
+      Com.Dec(port, motorSpeed[side])
         
     if debugFlag => PID_POSITION_DEBUG
       Com.Str(port, string(11, 13, "kProportional = "))
-      Com.Dec(port, kProportional[result])
+      Com.Dec(port, kProportional[side])
       
      
       
@@ -1693,6 +1712,30 @@ PRI InterpolateMidVariables : side | difference  ' called from parsing cog
 '' targetPower at the current motorPosition
 
   bytefill(@midReachedSetFlag, 0, 2)
+
+  repeat side from LEFT_MOTOR to RIGHT_MOTOR
+
+    ' Determine midPosition to motorPosition offset
+    if difference := targetPower[side] / kProportional[side]                
+      if difference => DEADZONE   ' Adjust for the deadzone   
+        difference -= DEADZONE 
+      elseif difference =< -DEADZONE
+        difference += DEADZONE
+      midPosition[side] := motorPosition[side] + difference
+      ' Add it back to the current Motor Position
+    else 
+      midPosition[side] := motorPosition[side]
+    midPosAcc[side]~                                ' Clear the fractional part
+  
+    ' Set the midVelocity to the current motor speed
+    midVelocity[side] := motorSpeed[LEFT_MOTOR] 
+    midVelAcc[side]~        ' Clear the fractional part
+ 
+PRI InterpolateMidVariablesNew : side | difference  ' called from parsing cog
+'' Sets midVelocity and midPosition variables to values that would create the current
+'' targetPower at the current motorPosition
+
+  bytefill(@midReachedSetFlag, 0, 2)
   longfill(@gDifference, 0, 2)
   longfill(@midVelAcc, 0, 2)
   longfill(@midPosAcc, 0, 2)
@@ -2191,6 +2234,13 @@ PUB AdjustBrightness(color, localBrightness) | localIndex, temp
     temp := byte[@color][localIndex] * localBrightness / 255
     byte[@result][localIndex] := temp
     
+PUB OrColors(firstLed, lastLed, localColor) : colorIndex
+
+  firstLed := 0 #> firstLed < MAX_LED_INDEX
+  lastLed := 0 #> lastLed < MAX_LED_INDEX
+  repeat colorIndex from firstLed to lastLed
+    fullBrightnessArray[colorIndex] |= localColor
+
 DAT
 
 prompt                          byte CR, 0
