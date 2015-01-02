@@ -82,7 +82,7 @@ CON{{ ****** Public Notes ******
   to the WS2811 driver. The red value is the most significant byte. To set the first LED
   to read use the command "COLOR 0 FF0000", to set the second LED green use "COLOR 1 FF00".
   To set the third LED blue use "COLOR 2 FF".
-  "COLOR": <first channel><last channel><color in hexadecimal> Set the color of multiple
+  "COLORS": <first channel><last channel><color in hexadecimal> Set the color of multiple
   WS2812x LEDs. The range for the two channel parameters is from zero to MAX_LED_INDEX.
   The range for the color parameter is the same for the command "COLOR".
   To set the second through fifth LED white use the command "COLORS 1 4 FFFFFF". As with
