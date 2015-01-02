@@ -441,6 +441,7 @@ CON
   DEFAULT_BRIGHTNESS = $3F
   #0, FROM_INPUT_LED, DISPLAY_POSITION_ERROR_LED
   DEFAULT_LED_MODE = DISPLAY_POSITION_ERROR_LED 'FROM_INPUT_LED '
+  DEFAULT_ERROR_SCALER = 100
   
 CON '' Cog Usage
 {{
@@ -522,7 +523,8 @@ servoPosition                   long 1500
 controlFrequency                long DEFAULT_CONTROL_FREQUENCY
 halfInterval                    long DEFAULT_HALF_INTERVAL
 directionFlag                   long 1[2], 1[10]
-
+errorScaler                     long DEFAULT_ERROR_SCALER
+ 
 activeDemo                      byte DEFAULT_DEMO 'ARC_TEST_DEMO 'CAL_POS_PER_REV_DEMO 'CAL_DISTANCE_DEMO '
 demoFlag                        byte 0 ' set to 255 or -1 to continuously run demo
                                        ' other non-zero values will instuct the 
@@ -820,9 +822,9 @@ PRI TempDebug(port) | freezeError[2], side, localColor
         localColor := $FF00
           
       if freezeError[side] > 0
-        OrColors(0, freezeError[side] - 1, localColor)
+        OrColors(0, (freezeError[side]  / errorScaler) - 1, localColor)
       elseif freezeError[side] < 0
-        OrColors(MAX_LED_INDEX + freezeError[side] + 1, MAX_LED_INDEX, localColor)
+        OrColors(MAX_LED_INDEX + (freezeError[side]  / errorScaler) + 1, MAX_LED_INDEX, localColor)
     AdjustAndSet(@fullBrightnessArray, brightness, LEDS_IN_USE)
       
   if port <> USB_COM
@@ -830,6 +832,7 @@ PRI TempDebug(port) | freezeError[2], side, localColor
               
   Com.Txs(port, 11)
   Com.Tx(port, 1) ' home
+  {'150102
   Com.Str(USB_COM, string(11, 13, "Eddie Firmware"))
   
   Com.Str(port, string(", mode = "))
@@ -859,9 +862,10 @@ PRI TempDebug(port) | freezeError[2], side, localColor
     Com.Str(port, string(", pingResults = "))
     Com.Dec(port, pingResults[0])
     Com.Str(port, string(", "))
-    Com.Dec(port, pingResults[1])
+    Com.Dec(port, pingResults[1]) }'150102
   
   repeat side from 0 to 1
+  
     if debugFlag => POWER_DEBUG
       Com.Str(port, string(11, 13, 11, 13, "targetPower["))
       Com.Dec(port, side)
@@ -869,10 +873,8 @@ PRI TempDebug(port) | freezeError[2], side, localColor
       Com.Dec(port, targetPower[side])
       Com.Str(port, string(", rampedPower = "))
       Com.Dec(port, rampedPower[side])
-      Com.Str(port, string(", targetPower = "))
-      Com.Dec(port, targetPower[side])
       Com.Str(port, string(", difference = "))
-      Com.Dec(port, targetPower[side] - rampedPower[side])
+      Com.Dec(port, targetPower[side] - rampedPower[side])  
      
     if debugFlag => PID_SPEED_DEBUG
      
@@ -885,6 +887,7 @@ PRI TempDebug(port) | freezeError[2], side, localColor
       Com.Dec(port, gDifference[side])
       Com.Str(port, string(", setPosition = "))
       Com.Dec(port, setPosition[side])
+      {'150102
       Com.Str(port, string(", integral = "))
       Com.Dec(port, integral[side])
       Com.Str(port, string(11, 13, "motorPosition["))
@@ -896,7 +899,7 @@ PRI TempDebug(port) | freezeError[2], side, localColor
         
     if debugFlag => PID_POSITION_DEBUG
       Com.Str(port, string(11, 13, "kProportional = "))
-      Com.Dec(port, kProportional[side])
+      Com.Dec(port, kProportional[side])   } '150102
       
      
       
@@ -1707,7 +1710,7 @@ PRI ExtraHeadingDebug(heading)
   Com.Tx(USB_COM, 11) ' clear end
   Com.Txe(USB_COM, 13)
 
-PRI InterpolateMidVariables : side | difference  ' called from parsing cog
+PRI InterpolateMidVariablesOld : side | difference  ' called from parsing cog
 '' Sets midVelocity and midPosition variables to values that would create the current
 '' targetPower at the current motorPosition
 
@@ -1731,7 +1734,7 @@ PRI InterpolateMidVariables : side | difference  ' called from parsing cog
     midVelocity[side] := motorSpeed[LEFT_MOTOR] 
     midVelAcc[side]~        ' Clear the fractional part
  
-PRI InterpolateMidVariablesNew : side | difference  ' called from parsing cog
+PRI InterpolateMidVariables : side | difference  ' called from parsing cog
 '' Sets midVelocity and midPosition variables to values that would create the current
 '' targetPower at the current motorPosition
 
