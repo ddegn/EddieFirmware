@@ -373,7 +373,8 @@ CON
   MAX_KILL_SWITCH_TIME = 26_500 'posx / MILLISECOND - a few tenths of a second
   MAX_KILL_SWITCH_SECONDS = MAX_KILL_SWITCH_TIME / 1000
   
-  #0, DEFAULT_DEMO, CAL_POS_PER_REV_DEMO, CAL_DISTANCE_DEMO, ARC_TEST_DEMO
+  #0, DEFAULT_DEMO, CAL_POS_PER_REV_DEMO, CAL_DISTANCE_DEMO, ARC_TEST_DEMO, {
+    } TURN_TEST_DEMO, DISTANCE_TEST_DEMO
   
 CON '' Debug Levels
 '' Use these constants to indicate which sections of code should be debugged.
@@ -445,17 +446,30 @@ CON
   
 CON '' Cog Usage
 {{
-  The objects, "Com", "Ping", "Servo", "Encoder" and "Header" each start their own cog.
+  Presently all 8 cogs of the Propeller are used by this program.
   
-  This top object uses two cogs bringing the total of cogs used to 7.
+  The objects, "Com", "Ping", "Servo", "Encoder", "Led" and "Header" each start
+  their own cog.
+  
+  This top object uses two cogs bringing the total of cogs used to 8.
    
-  The object "AltCom" is not presently active and requires a cog to use.
+  The object "AltCom" is not presently active and requires a cog be freed prior
+  to use.
 
+  The objects "Ping", "Music" (included in the Header object) and "Led" are
+  optional objects and will not effect the core features of the robot if removed.
+
+  When using HB-25 motor controllers, the "Servo" object is required for motor
+  control but if a h-bridge is being used, the "Servo" object is optional.
+  
   The "Header" file for hardware configuration using the Activity Board, includes
   a "Music" object. This allows sounds to be played using the Activity Board's
   audio jack. Since the Eddie control board does not include an audio out jack,
   the "Header" file intended for use with the Eddie control board does not include
   the "Music" object.
+
+  If someone requires help adding the "AltCom" object into the program, they are
+  welcome to ask Duane Degn for assistance.
   
 }}
 VAR
@@ -524,8 +538,8 @@ controlFrequency                long DEFAULT_CONTROL_FREQUENCY
 halfInterval                    long DEFAULT_HALF_INTERVAL
 directionFlag                   long 1[2], 1[10]
 errorScaler                     long DEFAULT_ERROR_SCALER
- 
-activeDemo                      byte DEFAULT_DEMO 'ARC_TEST_DEMO 'CAL_POS_PER_REV_DEMO 'CAL_DISTANCE_DEMO '
+direction                       long 1[2] 
+activeDemo                      byte DISTANCE_TEST_DEMO 'TURN_TEST_DEMO 'DEFAULT_DEMO 'ARC_TEST_DEMO 'CAL_POS_PER_REV_DEMO 'CAL_DISTANCE_DEMO '
 demoFlag                        byte 1 ' set to 255 or -1 to continuously run demo
                                        ' other non-zero values will instuct the 
                                        ' program the number of times it should execute
@@ -771,6 +785,10 @@ PUB ScriptedProgram
       PlayRoute(@calibrateDistance)
     ARC_TEST_DEMO:  
       PlayRoute(@arcTest)
+    TURN_TEST_DEMO:  
+      PlayRoute(@turnTest)
+    DISTANCE_TEST_DEMO:  
+      PlayRoute(@distanceTest)
     other:
       PlayRoute(@twoByOneMRectanglePlusTwo8s)
     
@@ -890,8 +908,13 @@ PRI TempDebug(port) | side
       Com.Str(port, string(", gLimit = "))
       Com.Dec(port, gLimit[side])
 
-      Com.Str(port, string(", setPosition = "))
+      Com.Str(port, string(11, 13, "setPosition = "))
       Com.Dec(port, setPosition[side])
+      Com.Str(port, string(", midPosition = "))
+      Com.Dec(port, midPosition[side])
+      Com.Str(port, string(", difference = "))
+      Com.Dec(port, setPosition[side] - midPosition[side])
+
       {'150102
       Com.Str(port, string(", integral = "))
       Com.Dec(port, integral[side])
@@ -932,6 +955,8 @@ PUB DisplayPositionError | freezeError[2]
 
   longmove(@freezeError, @gDifference, 2)
   longfill(@fullBrightnessArray, 0, LEDS_IN_USE)
+  freezeError[0] *= direction[0]
+  freezeError[1] *= direction[1]
   if freezeError[0] > freezeError[1]
     OrColors(0, freezeError[0] - freezeError[1] - 1, $FF0000)
   elseif freezeError[0] < freezeError[1]
@@ -1702,6 +1727,13 @@ PRI Travels(distanceLeft, distanceRight, speedLeft, speedRight)
     longfill(@activePositionAcceleration, maxPosAccel, 2)
      
   longfill(@stillCnt, 0, 2)
+
+  repeat result from LEFT_MOTOR to RIGHT_MOTOR
+    if distanceLeft[result] < 0
+      direction[result] := -1
+    else
+      direction[result] := 1
+  
   mode := POSITION
      
 PRI ExtraHeadingDebug(heading)
@@ -1737,7 +1769,7 @@ PRI InterpolateMidVariables : side | difference  ' called from parsing cog
   longmove(@midVelocity, @motorSpeed, 2)
   
   {repeat side from LEFT_MOTOR to RIGHT_MOTOR
-
+  
     ' Determine midPosition to motorPosition offset
     if difference := targetPower[side] / kProportional[side]                
       if difference => DEADZONE   ' Adjust for the deadzone   
@@ -2322,6 +2354,15 @@ straightF500mm50                byte "MM 500 50", 0
 straightF2000mm100              byte "MM 2000 100", 0
 straightF1000mm100              byte "MM 1000 100", 0
 straightF500mm100               byte "MM 500 100", 0
+straightF3000mm20               byte "MM 3000 20", 0
+straightR3000mm20               byte "MM -3000 20", 0
+straightF3000mm40               byte "MM 3000 40", 0
+straightR3000mm40               byte "MM -3000 40", 0
+straightF3000mm60               byte "MM 3000 60", 0
+straightR3000mm60               byte "MM -3000 60", 0
+straightF3000mm80               byte "MM 3000 80", 0
+straightF3000mm100              byte "MM 3000 100", 0
+
 
 straightF5Rev50                 byte "TRVL 720 50", 0
 
@@ -2335,7 +2376,19 @@ leftSpin5Rev100                 byte "TURN -1800 100", 0
 rightSpin5Rev100                byte "TURN 1800 100", 0
 rightSpin10Rev50                byte "TURN 3600 50", 0
 leftSpin10Rev50                 byte "TURN -3600 50", 0
-
+rightSpin20Rev5                 byte "TURN 7200 5", 0
+leftSpin20Rev5                  byte "TURN -7200 5", 0
+leftSpin1Rev10                  byte "TURN -360 10", 0
+rightSpin2Rev20                 byte "TURN 720 20", 0
+leftSpin2Rev30                  byte "TURN -720 30", 0
+rightSpin2Rev40                 byte "TURN 720 40", 0
+leftSpin2Rev50                  byte "TURN -720 50", 0
+rightSpin2Rev60                 byte "TURN 720 60", 0
+leftSpin3Rev70                  byte "TURN -1080 70", 0
+rightSpin3Rev80                 byte "TURN 1080 80", 0
+leftSpin4Rev90                  byte "TURN -1440 90", 0
+rightSpin4Rev100                byte "TURN 1440 100", 0
+                                                 
 DAT
 
 addressOffsetTest               word @addressOffsetTest
@@ -2378,7 +2431,63 @@ arcTest                         word @configDec
                                 word @leftCircleF299mm50, @rightCircleF299mm50 
                                 word @leftCircleF149_50, @rightCircleF149_50
                                 word @leftCircleF500mm50, @rightCircleF500mm50, 0
-                                                         
+
+turnTest                        word @configDec
+                                word @introSong
+                                word @rightSpin10Rev50
+                                word @acknowledgeSong
+                                word @leftSpin10Rev50
+                                word @acknowledgeSong
+                                word @leftSpin5Rev100
+                                word @acknowledgeSong
+                                word @rightSpin5Rev100
+                                word @catchMeIfYouCanSong
+                                word @rightSpin20Rev5
+                                word @acknowledgeSong
+                                word @leftSpin20Rev5
+                                word @acknowledgeSong
+                                word @roachSong
+
+distanceTest                    word @configDec
+                                word @introSong
+                                word @straightF3000mm20
+                                word @acknowledgeSong
+                                word @straightR3000mm20
+                                word @acknowledgeSong
+                                word @straightF3000mm40
+                                word @acknowledgeSong
+                                word @straightR3000mm40
+                                word @acknowledgeSong
+                                word @straightF3000mm60
+                                word @acknowledgeSong
+                                word @straightR3000mm60
+                                word @acknowledgeSong
+                                word @straightF3000mm80
+                                word @acknowledgeSong
+                                word @left180
+                                word @straightF3000mm100
+                                word @acknowledgeSong
+                                word @left180
+                                word @straightF2000mm50
+
+                                word @catchMeIfYouCanSong
+                                
+                                word @leftSpin1Rev10
+                                word @rightSpin2Rev20
+                                word @acknowledgeSong
+                                word @leftSpin2Rev30
+                                word @rightSpin2Rev40
+                                word @acknowledgeSong
+                                word @leftSpin2Rev50
+                                word @rightSpin2Rev60
+                                word @acknowledgeSong
+                                word @leftSpin3Rev70
+                                word @rightSpin3Rev80
+                                word @acknowledgeSong
+                                word @leftSpin4Rev90
+                                word @rightSpin4Rev100
+                                word @someSuccessSong
+                           
 DAT {{Terms of Use: MIT License
 
   Permission is hereby granted, free of charge, to any person obtaining a copy of this
