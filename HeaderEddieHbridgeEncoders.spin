@@ -76,6 +76,8 @@ CON
   TOO_SMALL_TO_FIX = 1                                  '' User changeable
   DEFAULT_INTEGRAL_NUMERATOR = 200                      '' User changeable
   DEFAULT_INTEGRAL_DENOMINATOR = 100                    '' User changeable
+  DEFAULT_INTEGRAL_NUMERATOR_END = 100                  '' User changeable  
+  DEFAULT_INTEGRAL_DENOMINATOR_E = 100                  '' User changeable
   
 OBJ
 

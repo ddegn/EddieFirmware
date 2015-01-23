@@ -105,14 +105,16 @@ CON{{ ****** Public Notes ******
   control than "GO".
   "HEAD", "HIGH", "HIGHS", "HWVER", "IN", "INS" 
   "KI": Used to set kI. (Becomes "active parameter" when used.)
-  "KID": Used to set kIntegralDenominator. (Becomes "active parameter" when used.)
+  "KID": <endFlag><value> Used to set kIntegralDenominator. (Becomes "active parameter"
+  when used.) "endFlag" may be either zero or one.
   "KILL": Set kill switch timer in milliseconds. Range $0000 to $6784.
   ($6784 = 26,500 (26.5 seconds) = MAX_KILL_SWITCH_TIME)
   If the time is set to zero, no communication is necessary to keep motors
   running. If a non-zero value is used, it should probably be larger
   than 50 so the overhead of parsing commands doesn't cause the
   motors to shutdown. Use "WATCH" to set timer with seconds.
-  "KIN": Used to set kIntegralNumerator. (Becomes "active parameter" when used.)
+  "KIN": <endFlag><value> Used to set kIntegralNumerator. (Becomes "active parameter" when
+  used.) "endFlag" may be either zero or one.
   "KP": Used to set adjustableKP. (Both left and right adjustableKP variables become
   "active parameter" when used.) 
   "L": Similar to GOX but used to set only the left power.
@@ -223,6 +225,10 @@ CON
   USB_TX = 30 
   USB_RX = 31
 
+  XBEE_TX = 5
+  XBEE_RX = 4
+   
+  
   ' Master GPIO mask (Only high pins can be set as outputs)
   OUTPUTABLE = Header#OUTPUTABLE
   PINGABLE = Header#PINGABLE
@@ -237,7 +243,8 @@ CON
   ' Terminal Settings
   BAUDMODE = Header#BAUDMODE
   USB_BAUD = Header#USB_BAUD
-
+  XBEE_BAUD = 9_600
+  
   'PROCESSRATE = _CLKFREQ / 16_000
   'TIMEOUT       = 10
 
@@ -419,8 +426,9 @@ CON '' Debug Levels
 
 CON 
 
-  #0, USB_COM, ALT_COM
-  DEFAULT_CONTROL_COM = USB_COM 'ALT_COM
+  #0, USB_COM, XBEE_COM, NO_ACTIVE_COM
+  DEFAULT_CONTROL_COM = NO_ACTIVE_COM
+  DEFAULT_DEBUG_COM = XBEE_COM 'USB_COM
   
   ' kpControlType enumeration
   #0, TARGET_DEPENDENT, CURRENT_SPEED_DEPENDENT
@@ -487,7 +495,7 @@ VAR
   long activeParTxtPtr
  
   long positionDifference[2] 
-  long lastComTime
+  long lastComTime, lastPartialTime
   long newPowerTarget[2]
   long rampedPower[2]
   long targetPower[2]
@@ -527,12 +535,15 @@ maxPowAccel                     long 470        ' Maximum allowed motor power ac
 maxPosAccel                     long 800        ' Maximum allowed positional acceleration
 
 kProportional                   long 117[2] 
-kIntegralNumerator              long Header#DEFAULT_INTEGRAL_NUMERATOR 
+kIntegralNumerator              long Header#DEFAULT_INTEGRAL_NUMERATOR
+                                long Header#DEFAULT_INTEGRAL_NUMERATOR_END 
 kIntegralDenominator            long Header#DEFAULT_INTEGRAL_DENOMINATOR
+                                long Header#DEFAULT_INTEGRAL_DENOMINATOR_E
 tempo                           long 1500
 smallChange                     long 1
 bigChange                       long 10
 killSwitchTimer                 long 0 '1000 * MILLISECOND ' default Eddie delay. Set to 0 to turn off.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+partialComTimeLimit             long 15_000 * MILLISECOND
 servoPosition                   long 1500
 controlFrequency                long DEFAULT_CONTROL_FREQUENCY
 halfInterval                    long DEFAULT_HALF_INTERVAL
@@ -540,7 +551,7 @@ directionFlag                   long 1[2], 1[10]
 errorScaler                     long DEFAULT_ERROR_SCALER
 direction                       long 1[2] 
 activeDemo                      byte DISTANCE_TEST_DEMO 'TURN_TEST_DEMO 'DEFAULT_DEMO 'ARC_TEST_DEMO 'CAL_POS_PER_REV_DEMO 'CAL_DISTANCE_DEMO '
-demoFlag                        byte 1 ' set to 255 or -1 to continuously run demo
+demoFlag                        byte 0 ' set to 255 or -1 to continuously run demo
                                        ' other non-zero values will instuct the 
                                        ' program the number of times it should execute
                                        ' the method "ScriptedProgram".
@@ -551,7 +562,8 @@ decOutFlag                      byte 1 ' set to 1 for decimal output rather an h
 volume                          byte 30
 pingPauseFlag                   byte 0
 
-controlCom                      byte DEFAULT_CONTROL_COM                        
+controlCom                      byte DEFAULT_CONTROL_COM
+debugCom                        byte DEFAULT_DEBUG_COM                      
 mode                            byte 0                  ' Current mode of the control system
 verbose                         byte true 'false '      ' Verbosity level (Currently nonzero = verbose)
 
@@ -577,10 +589,11 @@ OBJ
   '' This would allow communication with other devices such as a microcontroller
   '' or a XBee.
  
-PUB Main | rxcheck
+PUB Main | rxCheck
 
   Com.Init
   Com.AddPort(USB_COM, USB_RX, USB_TX, -1, -1, 0, BAUDMODE, USB_BAUD)
+  Com.AddPort(XBEE_COM, XBEE_RX, XBEE_TX, -1, -1, 0, BAUDMODE, XBEE_BAUD)
   Com.Start                                             'Start the ports
   {'**141220d  
   AltCom.Init
@@ -607,45 +620,29 @@ PUB Main | rxcheck
   Led.start(LED_PIN, LEDS_IN_USE)
 
   if debugFlag => INTRO_DEBUG
-    Com.Strs(USB_COM, string(11, 13, "Eddie Firmware"))
+    Com.Strs(debugCom, string(11, 13, "Eddie Firmware"))
    
-    Com.Tx(USB_COM, 7) ' Bell sounds in terminal to catch reset issues
+    Com.Tx(debugCom, 7) ' Bell sounds in terminal to catch reset issues
     waitcnt(clkfreq / 4 + cnt)
-    Com.Tx(USB_COM, 7)
+    Com.Tx(debugCom, 7)
     waitcnt(clkfreq / 4 + cnt)
-    Com.Txe(USB_COM, 7)
+    Com.Txe(debugCom, 7)
     
   'ExecuteStoredCommand(@introSong)
     
   activeParameter := @targetPower[RIGHT_MOTOR]
   activeParTxtPtr := @targetPowerRTxt
-  lastComTime := cnt
+  lastPartialTime := lastComTime := cnt
   repeat                                                ' Main loop (repeats forever)
     repeat           ' Read a byte from the command UART
       if demoFlag
         ScriptedProgram
         if demoFlag <> $FF
-          demoFlag-- 
-      Com.Lock
-      rxcheck := Com.RxCheck(USB_COM)
-      Com.E ' clear lock 
-      
-   
-      if rxcheck <> -1
-        controlCom := USB_COM '*** think about turning this off after use
-      'else
-      {AltCom.Lock
-      rxcheck := AltCom.RxCheck(0)
-      AltCom.E
-      if rxcheck <> -1
-        'if debugFlag => PROP_CHARACTER_DEBUG
-        '  Com.Strs(USB_COM, string(11, 13, "From Prop:", 34))
-        '  Com.Tx(USB_COM, rxcheck)
-        '  Com.Txe(USB_COM, 34)  
-        controlCom := ALT_COM
-      }        
-      
-      
+          demoFlag--
+          
+      rxCheck := CheckCom
+            
+       
       ' Stop motors if no communication has been received in the allowed time
       ' (dwd 141125b I changed time keeping variables from original code.)
       ' The allowed time (in millieseconds) may be changed with the "KILL" command.
@@ -656,7 +653,7 @@ PUB Main | rxcheck
           Header.SetMotorPower(0, 0)
           Header.SetMotorPower(1, 0)
           if debugFlag => KILL_SWITCH_DEBUG
-            Com.Strse(USB_COM, string(13, "Motors Stopped"))
+            Com.Strse(debugCom, string(13, "Motors Stopped"))
           waitcnt(constant(_clkfreq / CONTROL_FREQUENCY) + cnt)
           targetPower[LEFT_MOTOR] := 0
           targetPower[RIGHT_MOTOR] := 0
@@ -666,7 +663,7 @@ PUB Main | rxcheck
           mode := POWER
       if true 
         if debugFlag => MAIN_DEBUG
-          TempDebug(USB_COM)
+          TempDebug(debugCom)
     while rxcheck < 0
        
     inputBuffer[inputIndex++] := rxcheck
@@ -676,7 +673,9 @@ PUB Main | rxcheck
       OutputStr(@nack)                                  ' Ready error response
       if verbose                                        ' If in verbose mode, add a description
         OutputStr(@overflow)
-      repeat                                            ' Ignore all inputs other than NUL or CR (terminating a command) 
+      inputIndex := 0                                   '   to start receiving a new command
+      controlCom := NO_ACTIVE_COM
+      {repeat                                            ' Ignore all inputs other than NUL or CR (terminating a command) 
         case Rx(controlCom)                        ' Send the correct error response for the transmission mode
           {
           NUL :                                         '   Checksum mode
@@ -685,14 +684,14 @@ PUB Main | rxcheck
           }
           CR :                                          '   Plain text mode
             SendResponse    ' branch # 1 termination 
-            quit
+            quit    }
     else                                                ' If there isn't a buffer overflow...                              
       case inputBuffer[inputIndex - 1]                  ' Parse the character
         
         NUL :                                           ' End command in checksum mode:
           if debugFlag => INPUT_WARNINGS_DEBUG
-            Com.Strs(USB_COM, string(11, 13, 7, "Error, NUL character received.", 7))
-            Com.Stre(USB_COM, Error)
+            Com.Strs(debugCom, string(11, 13, 7, "Error, NUL character received.", 7))
+            Com.Stre(debugCom, Error)
             waitcnt(clkfreq * 2 + cnt)
 
           {if inputIndex > 1                             '   Only parse buffer if it has content
@@ -708,7 +707,9 @@ PUB Main | rxcheck
         BS :                                            ' Process backspaces
           if --inputIndex                               ' Ignore the BS character itself
             --inputIndex                                ' Ignore previous character if exists
-
+          ifnot inputIndex
+            controlCom := NO_ACTIVE_COM
+            
         "+" :
           UpdateActive(smallChange)
         "-" :
@@ -719,33 +720,66 @@ PUB Main | rxcheck
           UpdateActive(-1 * bigChange)
           
         CR:                                             ' End command in plaintext mode:
-          if inputIndex > 1                             '   Only parse buffer if it has content
-            if error := \Parse                          '   Run the parser and trap and report errors
-              outputIndex~                              '    Handle errors, if they occurred
+          if inputIndex > 1                             ' Only parse buffer if it has content
+            if error := \Parse                          ' Run the parser and trap and report errors
+              outputIndex := 0                          ' Handle errors, if they occurred
               OutputStr(@nack)
              
               if verbose
                 OutputStr(error)
                 if debugFlag => INPUT_WARNINGS_DEBUG
-                  Com.Strs(USB_COM, string(11, 13, 7, "Parse Error = "))
-                  Com.Stre(USB_COM, error)
+                  Com.Strs(debugCom, string(11, 13, 7, "Parse Error = "))
+                  Com.Stre(debugCom, error)
                   waitcnt(clkfreq * 2 + cnt)
             else
               result := inputIndex <# PREVIOUS_BUFFER_SIZE
                        
-            SendResponse                                '   Send a response if no error
+            SendResponse                                ' Send a response if no error
            
-          else                                          '   For an empty buffer, clear the pointer
-            inputIndex~                                 '   to start receiving a new command
-           
+          else                                          ' For an empty buffer, clear the pointer
+            inputIndex := 0                             ' to start receiving a new command
+          controlCom := NO_ACTIVE_COM 
         SOH..BEL, LF..FF, SO..US, 127..255 :            ' Ignore invalid characters
           if debugFlag => INPUT_WARNINGS_DEBUG
-            Com.Strs(USB_COM, string(11, 13, 7, "Invalid Character Error = <$"))
-            Com.Hex(USB_COM, inputBuffer[inputIndex - 1], 2)
-            Com.Txe(USB_COM, ">")
+            Com.Strs(debugCom, string(11, 13, 7, "Invalid Character Error = <$"))
+            Com.Hex(debugCom, inputBuffer[inputIndex - 1], 2)
+            Com.Txe(debugCom, ">")
             inputIndex--
             waitcnt(clkfreq / 2 + cnt)
                       
+PRI CheckCom : rxCheck
+
+  case controlCom
+    USB_COM:
+      Com.Lock
+      rxCheck := Com.RxCheck(USB_COM)
+      Com.E ' clear lock 
+    XBEE_COM:
+      Com.Lock
+      rxCheck := Com.RxCheck(XBEE_COM)
+      Com.E ' clear lock 
+    NO_ACTIVE_COM:
+            
+      Com.Lock
+      rxCheck := Com.RxCheck(USB_COM)
+      Com.E ' clear lock
+      if rxCheck == -1
+        Com.Lock
+        rxCheck := Com.RxCheck(XBEE_COM)
+        Com.E
+        if rxCheck <> -1
+          controlCom := XBEE_COM
+          debugCom := XBEE_COM
+      else
+        controlCom := USB_COM
+        debugCom := USB_COM
+  if rxCheck <> -1
+    lastPartialTime := cnt
+  elseif cnt - lastPartialTime > partialComTimeLimit
+    case controlCom
+      USB_COM, XBEE_COM:
+        rxCheck := 13 ' force end of communication
+        
 PRI UpdateActive(changeAmount)
 
   if inputIndex == 1
@@ -758,7 +792,8 @@ PRI UpdateActive(changeAmount)
       long[activeParameter + 4] += changeAmount ' adjust right also
     inputIndex--
     lastComTime := cnt
-
+    controlCom := NO_ACTIVE_COM
+    
 PUB ScriptedProgram
 '' The current scripted program.
 '' Set the "demoFlag" variable to 1 to run the scripted section
@@ -766,7 +801,7 @@ PUB ScriptedProgram
 
   '' Initialize Script Portion of Program
   if debugFlag => SCRIPT_INTRO_DEBUG 
-    Com.Strse(USB_COM, string(11, 13, "Starting Demo", 11, 13))
+    Com.Strse(debugCom, string(11, 13, "Starting Demo", 11, 13))
   result := decInFlag ' save flag state to retore later
   '' It's a good idea to make the first command in the script a "DECIN" command
   '' the program know which base system to use as input.
@@ -774,7 +809,7 @@ PUB ScriptedProgram
   waitcnt(clkfreq / 4 + cnt)
   if debugFlag => SCRIPT_DEBUG
     Com.Lock
-    Com.Txe(USB_COM, 12) ' clear below
+    Com.Txe(debugCom, 12) ' clear below
 
   case activeDemo
     DEFAULT_DEMO:
@@ -800,7 +835,7 @@ PUB ScriptedProgram
   waitcnt(clkfreq / 4 + cnt)
   inputIndex := 0            
   if debugFlag => SCRIPT_INTRO_DEBUG
-    Com.Strse(USB_COM, string(11, 13, "End of Demo", 11, 13))
+    Com.Strse(debugCom, string(11, 13, "End of Demo", 11, 13))
 
 PRI PlayRoute(routePtr)
 
@@ -813,12 +848,12 @@ PRI ExecuteStoredCommand(commandPtr)
   inputIndex := strsize(commandPtr) + 1
   bytemove(@inputBuffer, commandPtr, inputIndex)
   if debugFlag => SCRIPT_EXECUTE_DEBUG
-    Com.Txs(USB_COM, 11)
-    Com.Tx(USB_COM, 13)
-    Com.Stre(USB_COM, commandPtr)
+    Com.Txs(debugCom, 11)
+    Com.Tx(debugCom, 13)
+    Com.Stre(debugCom, commandPtr)
   if error := \Parse                          '   Run the parser and trap and report errors
     if debugFlag => SCRIPT_WARNING_DEBUG
-      Com.Strse(USB_COM, error)  
+      Com.Strse(debugCom, error)  
 
 PRI ExecuteAndWait(pointer)
 
@@ -847,8 +882,8 @@ PRI TempDebug(port) | side
         OrColors(MAX_LED_INDEX + (freezeError[side]  / errorScaler) + 1, MAX_LED_INDEX, localColor) }
     
       
-  if port <> USB_COM
-    return
+  'if port <> USB_COM
+  '  return
               
   Com.Txs(port, 11)
   Com.Tx(port, 1) ' home
@@ -1299,11 +1334,15 @@ PRI ParseJK | parameter[3]
 '' "KID", "KILL", "KIN", "KP" ' 4
 
   if strcomp(@InputBuffer, string("KID"))        
-    parameter := ParseHex(NextParameter)
+    parameter[0] := ParseHex(NextParameter) & 1
+    parameter[1] := ParseHex(NextParameter) 
     CheckLastParameter
-    kIntegralDenominator := parameter
-    activeParameter := @kIntegralDenominator
-    activeParTxtPtr := @kIntegralDenominatorTxt 
+    kIntegralDenominator[parameter[0]] := parameter[1] 
+    activeParameter := @kIntegralDenominator + (4 * parameter[0])
+    if parameter[0]
+      activeParTxtPtr := @kIntegralDenominatorEndTxt
+    else
+      activeParTxtPtr := @kIntegralDenominatorTxt 
   elseif strcomp(@InputBuffer, string("KILL"))        
     parameter := ParseHex(NextParameter)
     CheckLastParameter
@@ -1314,11 +1353,15 @@ PRI ParseJK | parameter[3]
     killSwitchTimer := parameter[1] * MILLISECOND
     lastComTime := cnt
   elseif strcomp(@InputBuffer, string("KIN"))        
-    parameter := ParseHex(NextParameter)
+    parameter[0] := ParseHex(NextParameter) & 1
+    parameter[1] := ParseHex(NextParameter) 
     CheckLastParameter
-    kIntegralNumerator := parameter
-    activeParameter := @kIntegralNumerator
-    activeParTxtPtr := @kIntegralNumeratorTxt 
+    kIntegralNumerator[parameter[0]] := parameter[1]
+    activeParameter := @kIntegralNumerator + (4 * parameter[0])
+    if parameter[0]
+      activeParTxtPtr := @kIntegralNumeratorEndTxt
+    else
+      activeParTxtPtr := @kIntegralNumeratorTxt
   elseif strcomp(@InputBuffer, string("KP"))        
     parameter := ParseHex(NextParameter)
     CheckLastParameter
@@ -1738,24 +1781,24 @@ PRI Travels(distanceLeft, distanceRight, speedLeft, speedRight)
      
 PRI ExtraHeadingDebug(heading)
  
-  Com.Strs(USB_COM, string(11, 13, "Heading = ((("))
-  Com.Dec(USB_COM, motorPosition[LEFT_MOTOR])
-  Com.Str(USB_COM, string(" + "))
-  Com.Dec(USB_COM, motPosOffset[LEFT_MOTOR])
-  Com.Str(USB_COM, string(") - ("))
-  Com.Dec(USB_COM, motorPosition[RIGHT_MOTOR])
-  Com.Str(USB_COM, string(" + "))
-  Com.Dec(USB_COM, motPosOffset[RIGHT_MOTOR])
+  Com.Strs(debugCom, string(11, 13, "Heading = ((("))
+  Com.Dec(debugCom, motorPosition[LEFT_MOTOR])
+  Com.Str(debugCom, string(" + "))
+  Com.Dec(debugCom, motPosOffset[LEFT_MOTOR])
+  Com.Str(debugCom, string(") - ("))
+  Com.Dec(debugCom, motorPosition[RIGHT_MOTOR])
+  Com.Str(debugCom, string(" + "))
+  Com.Dec(debugCom, motPosOffset[RIGHT_MOTOR])
    
-  Com.Str(USB_COM, string(")) // "))
-  Com.Dec(USB_COM, Header#POSITIONS_PER_ROTATION)
-  Com.Str(USB_COM, string(") * 360 / "))
-  Com.Dec(USB_COM, Header#POSITIONS_PER_ROTATION)
-  Com.Str(USB_COM, string(11, 13, " = "))
-  Com.Dec(USB_COM, heading)
+  Com.Str(debugCom, string(")) // "))
+  Com.Dec(debugCom, Header#POSITIONS_PER_ROTATION)
+  Com.Str(debugCom, string(") * 360 / "))
+  Com.Dec(debugCom, Header#POSITIONS_PER_ROTATION)
+  Com.Str(debugCom, string(11, 13, " = "))
+  Com.Dec(debugCom, heading)
         
-  Com.Tx(USB_COM, 11) ' clear end
-  Com.Txe(USB_COM, 13)
+  Com.Tx(debugCom, 11) ' clear end
+  Com.Txe(debugCom, 13)
 
 PRI InterpolateMidVariables : side | difference  ' called from parsing cog
 '' Sets midVelocity and midPosition variables to values that would create the current
@@ -1801,7 +1844,7 @@ PRI PDLoop : side | nextControlCycle
     bufferIndex++
     bufferIndex //= POSITION_BUFFER_SIZE
     
-PRI PDIteration(side) | motorPositionSample, difference, limit
+PRI PDIteration(side) | motorPositionSample, difference, limit, previousReachedFlag
 '' Read the wheel's speed and position, and set its power
 '' The power is set by use of a global variable "rampedPower".
   
@@ -1934,13 +1977,15 @@ PRI PDIteration(side) | motorPositionSample, difference, limit
     
       else
         gDifference[side] := difference := midPosition[side] - MotorPositionSample
-    
+      previousReachedFlag := midReachedSetFlag[side]
       ' The "g" in "gDifference" stands for "global" I wanted a global variable
       ' as a debugging aid.
       
       if midPosition[side] == setPosition[side] or midReachedSetFlag[side]
         midReachedSetFlag[side] := 1 ' The "midPosition" can change so make sure the
         ' target position stays the same.
+        ifnot previousReachedFlag
+          integral[side] := 0 ' start fresh with integral
         if ||gDifference[side] > Header#TOO_SMALL_TO_FIX
           integral[side] += gDifference[side] 
         else
@@ -1949,13 +1994,14 @@ PRI PDIteration(side) | motorPositionSample, difference, limit
           activePositionAcceleration[side] := maxPosAccel ' reset to standard acceleration
       else
         
-        integral[side] := 0
+        integral[side] += gDifference[side] ' This made things worse.
+        'integral[side] := 0
         
       ' targetPower is proportional to the motors physical distance from the set point,
       ' limited by MAX_POWER
       '''targetPower[side] := -MAX_ON_TIME #> difference * kP <# MAX_ON_TIME
       newPowerTarget[side] := (difference * kProportional[side]) + {
-      } (integral[side] * kIntegralNumerator / kIntegralDenominator)
+      } (integral[side] * kIntegralNumerator[midReachedSetFlag[side]] / kIntegralDenominator[midReachedSetFlag[side]])
       targetPower[side] := MIN_POWER #> newPowerTarget[side] <# MAX_POWER
 
       ' rampedPower approaches targetPower as limited by maxPowAccel
@@ -2018,11 +2064,11 @@ PRI ParseDec(pointer) | character, sign                       '' Interpret an AS
 
   sign := 1
   if debugFlag => PARSE_DEC_DEBUG
-    Com.Strse(USB_COM, string(11, 13, "ParseDec"))
+    Com.Strse(debugCom, string(11, 13, "ParseDec"))
   repeat 11
     if debugFlag => PARSE_DEC_DEBUG
-      Com.Strs(USB_COM, string(", byte[] ="))
-      SafeTx(USB_COM, byte[pointer])
+      Com.Strs(debugCom, string(", byte[] ="))
+      SafeTx(debugCom, byte[pointer])
       Com.E
     case character := byte[pointer++]
       NUL:
@@ -2106,34 +2152,35 @@ PRI OutputHex(value, digits)                            '' Create a hexadecimal 
 
 PRI Rx(port)
 
-  if port == ALT_COM
+  {if port == ALT_COM
     return '**141220d 
     '**141220d AltCom.Lock
     '**141220d result := AltCom.Rx(0)
     '**141220d AltCom.E
   else
+  }
     Com.Lock  
-    result := Com.Rx(0)
+    result := Com.Rx(port)
     Com.E
     
 PRI SendResponse                                        '' Transmit the string in the output buffer and clear the buffer
 
   result := outputIndex <# OUTPUT_COPY_BUFFER_SIZE
   
-  if controlCom == ALT_COM
+  {if controlCom == ALT_COM
     return '**141220d 
     '**141220d AltCom.Lock
     '**141220d AltCom.Str(0, @outputBuffer)                               ' Transmit the buffer contents
     '**141220d AltCom.Stre(0, @prompt)                                     ' Transmit the prompt
-  else
-    Com.Lock
-    Com.Str(0, @outputBuffer)                               ' Transmit the buffer contents
-    Com.Stre(0, @prompt)                                     ' Transmit the prompt
-  inputIndex~                                           ' Clear the buffers
+  else }
+  Com.Lock
+  Com.Str(controlCom, @outputBuffer)                    ' Transmit the buffer contents
+  Com.Stre(controlCom, @prompt)                         ' Transmit the prompt
+  inputIndex := 0                                       ' Clear the buffers
   '** Why clear inputIndex here?
   
-  outputBuffer~  ' is this needed?
-  outputIndex~
+  outputBuffer := 0                                     ' is this needed?
+  outputIndex := 0
   result := 0
 
 PRI ReadEEPROM(startAddr, endAddr, eeStart) | addr
@@ -2296,8 +2343,9 @@ kpControlTypeTxt                byte "TARGET_DEPENDENT", 0
                                 byte "CURRENT_SPEED_DEPENDENT", 0
                                 
 comTxt                          byte "USB_COM", 0
-                                byte "ALT_COM", 0
-  
+                                byte "XBEE_COM", 0
+                                byte "NO_ACTIVE_COM", 0
+                                
 ' Active Parameter Text
 maxPowAccelTxt                  byte "maxPowAccel", 0 
 maxPosAccelTxt                  byte "maxPosAccel", 0
@@ -2307,7 +2355,9 @@ kProportionalRightTxt           byte "kProportionalRight", 0
 kProportionalLeftTxt            byte "kProportionalLeft", 0  
 
 kIntegralDenominatorTxt         byte "kIntegralDenominator", 0
+kIntegralDenominatorEndTxt      byte "kIntegralDenominator[END]", 0
 kIntegralNumeratorTxt           byte "kIntegralNumerator", 0
+kIntegralNumeratorEndTxt        byte "kIntegralNumerator[END]", 0
   
 servoTxt                        byte "servo #   ", 0
 targetPowerLTxt                 byte "targetPower[LEFT]", 0
@@ -2446,7 +2496,7 @@ turnTest                        word @configDec
                                 word @acknowledgeSong
                                 word @leftSpin20Rev5
                                 word @acknowledgeSong
-                                word @roachSong
+                                word @roachSong, 0
 
 distanceTest                    word @configDec
                                 word @introSong
@@ -2486,7 +2536,7 @@ distanceTest                    word @configDec
                                 word @acknowledgeSong
                                 word @leftSpin4Rev90
                                 word @rightSpin4Rev100
-                                word @someSuccessSong
+                                word @someSuccessSong, 0
                            
 DAT {{Terms of Use: MIT License
 
