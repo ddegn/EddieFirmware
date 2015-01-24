@@ -170,7 +170,9 @@ CON{{ ****** Public Notes ******
   "SPD"
   "SPNG", "STOP"
   "TEMPO": Set the "tempo" variable. Used with "SONG" command.
-  "TRVL", "TURN", "VER", "VERB"
+  "TRVL", "TURN"
+  "USE": Set speedToUse.
+  "VER", "VERB"
 
   disabled(141215a)"VOL": Set volume used for sound commands. Range of 0 through 100.
   "WATCH": Set kill switch timer in seconds. Range $0 to $001A.
@@ -320,6 +322,21 @@ CON
   HALF_SEC = CONTROL_FREQUENCY / 2   ' Iterations per unit 'dwd 141118b good name?
   'HALF_SEC changed to in some locations.
   POSITION_BUFFER_SIZE = CONTROL_FREQUENCY / 2
+
+  SPEED_NUMERATOR = 2_000_000_000 ' largest manageable number
+  ' 25 seconds of clock ticks
+  ADJ_TO_TICKS_PER_HALF_SECOND = SPEED_NUMERATOR / (_CLKFREQ / 2)
+  MIN_SPEED_RESOLUTION = 1000
+  MAX_USABLE_TIME = SPEED_NUMERATOR /  MIN_SPEED_RESOLUTION
+  '' The values "SPEED_NUMERATOR" and "MANAGABLE_BIT_ADJUSTMENT" are used to
+  '' calculate the speed from the time between encoder ticks.
+  '' The value produced from this calculation is a number 100 times
+  '' as large as the value of the speed calculated with the original
+  '' technique.
+  '' Hopefully these extra digits are significant and the speed values
+  '' calculated from the time between encoder ticks will allow for
+  '' better control of the motors.
+  
   'X_BUFFER_BITS = 4
   X_BUFFER_SIZE = HALF_SEC '1 << X_BUFFER_BITS
   'X_BUFFER_LIMIT = X_BUFFER_SIZE - 1
@@ -346,6 +363,11 @@ CON
   ' This is 100 encoder ticks per half second (or 200 ticks per second).
   ' **141225c MAX_TIME_TO_WAIT_FOR_ENCODER = _CLKFREQ / 4 '_CLKFREQ / 2
   ' **141225c STOPPED_ENCODER_WAIT_TIME = _CLKFREQ / DEFAULT_CONTROL_FREQUENCY
+
+  ' speedToUse enumeration
+  #0, EXPERIMENTAL_SPEED, EDDIE_SPEED
+  DEFAULT_SPEED_TYPE = EDDIE_SPEED
+  
   SECONDS_UNTIL_SHUTDOWN = 2
   '' "SECONDS_UNTIL_SHUTDOWN" limits the time power will be applied to a motor
   '' without movement.
@@ -354,19 +376,7 @@ CON
                                        ' too soon.
                                        
   'SMALL_DISTANCE_REMAINING_THRESHOLD = 100 ' When to start worrying about motors stopping
-                                           ' too soon. 
-  MANAGABLE_BIT_ADJUSTMENT = 6
-  ' **141225c MANAGABLE_ADJUSTMENT = 1 << 6
-  SPEED_NUMERATOR = 62_500_000
-  '' The values "SPEED_NUMERATOR" and "MANAGABLE_BIT_ADJUSTMENT" are used to
-  '' calculate the speed from the time between encoder ticks.
-  '' The value produced from this calculation is a number 100 times
-  '' as large as the value of the speed calculated with the original
-  '' technique.
-  '' Hopefully these extra digits are significant and the speed values
-  '' calculated from the time between encoder ticks will allow for
-  '' better control of the motors.
-  
+                                           ' too soon.   
   'DEFAULT_MAX_POWER_ACCELERATION = 20 'MAX_POWER / CONTROL_CYCLES_TIL_FULL_POWER '4
   'DEFAULT_MAX_SPEED_ACCELERATION = MAX_INPUT_SPEED / 40 'CONTROL_CYCLES_TIL_FULL_SPEED
 
@@ -497,12 +507,16 @@ VAR
   long positionDifference[2] 
   long lastComTime, lastPartialTime
   long newPowerTarget[2]
-  long rampedPower[2]
+  long rampedPower[Encoders#TOTAL_ENCODERS]
+  long encoderDirection[Encoders#TOTAL_ENCODERS] ' Tis will be either 1 or -1 depending on 
+                                                 ' which way the motor is turning. I'm not 
+                                                 ' surewhy I added this.
   long targetPower[2]
   long integral[2]
   long targetSpeed[2]
   long motorPosition[2], motorSpeed[2]
- 
+  long transitionTime[Encoders#TOTAL_ENCODERS]
+  
   long motorPositionBuffer[2 * POSITION_BUFFER_SIZE]
   long bufferIndex
   long motPosOffset[2] ' Offset between Physical and internal motor position
@@ -518,7 +532,36 @@ VAR
   long addressOffsetCorrection
   long activePositionAcceleration[2]
   long fullBrightnessArray[LEDS_IN_USE], gLimit[2]
-  
+
+  long stoppedMotorCount[Encoders#TOTAL_ENCODERS], alternatingEncoder[Encoders#TOTAL_ENCODERS]
+  long alternatingTimeStamp[Encoders#TOTAL_ENCODERS]
+  long alternatingDeltaTime[Encoders#TOTAL_ENCODERS]
+  long previousPosition[Encoders#TOTAL_ENCODERS]
+  long previousTimeStamp[Encoders#TOTAL_ENCODERS]
+  long positionBuffer[POSITION_BUFFER_SIZE * Encoders#TOTAL_ENCODERS]
+  '\long xPositionBuffer[POSITION_BUFFER_SIZE * Encoders#TOTAL_ENCODERS]
+  'long xTimeBuffer[POSITION_BUFFER_SIZE * Encoders#TOTAL_ENCODERS]
+  'long xPeriodSpeed[Encoders#TOTAL_ENCODERS]
+  'long xAverageSpeed[Encoders#TOTAL_ENCODERS], xBufferTotal[Encoders#TOTAL_ENCODERS]
+  long deltaPosition[Encoders#TOTAL_ENCODERS], currentSpeed[Encoders#TOTAL_ENCODERS]
+  'long xPeriodDistance[Encoders#TOTAL_ENCODERS], xPeriodTime[Encoders#TOTAL_ENCODERS]
+  'long xPreviousCycleTime[Encoders#TOTAL_ENCODERS]
+  long fullCycleTimeStamp[Encoders#TOTAL_ENCODERS]
+  'long xCycleSingleDeltaTime[Encoders#TOTAL_ENCODERS]
+  'long xPreviousCycleEncoder[Encoders#TOTAL_ENCODERS]
+  long alternatingFullCycle[Encoders#TOTAL_ENCODERS]
+  'long xCycleSingleDistance[Encoders#TOTAL_ENCODERS]
+  'long xCyclePeriodDistance[Encoders#TOTAL_ENCODERS], xCyclePeriodTime[Encoders#TOTAL_ENCODERS]
+  'long alternatingFullCycleBuffer[Encoders#TOTAL_ENCODERS * POSITION_BUFFER_SIZE]
+  'long fullCycleTimeStampBuffer[Encoders#TOTAL_ENCODERS * POSITION_BUFFER_SIZE]
+  long halfSecondDeltaPosition[Encoders#TOTAL_ENCODERS]
+  long halfSecondDeltaTime[Encoders#TOTAL_ENCODERS]
+  long timeBuffer[Encoders#TOTAL_ENCODERS * POSITION_BUFFER_SIZE] 
+  'long xCyclePeriodSpeed[Encoders#TOTAL_ENCODERS], xCycleSingleSpeed[Encoders#TOTAL_ENCODERS] 
+  long altDataPtr[Encoders#TOTAL_ENCODERS]
+  long bufferedSpeed[Encoders#TOTAL_ENCODERS]
+  long eddieSpeed[Encoders#TOTAL_ENCODERS]
+  byte stillStoppedFlag[Encoders#TOTAL_ENCODERS]
   byte positionErrorFlag[2]
   byte pingsInUse, maxPingIndex
   byte inputBuffer[BUFFER_LENGTH], outputBuffer[BUFFER_LENGTH] 
@@ -549,7 +592,17 @@ controlFrequency                long DEFAULT_CONTROL_FREQUENCY
 halfInterval                    long DEFAULT_HALF_INTERVAL
 directionFlag                   long 1[2], 1[10]
 errorScaler                     long DEFAULT_ERROR_SCALER
-direction                       long 1[2] 
+direction                       long 1[2]
+DAT
+' todo change this pins to bytes
+positiveDirectionPin            long Header#POSITIVE_DIRECTION_PIN_0
+                                long Header#POSITIVE_DIRECTION_PIN_1
+negativeDirectionPin            long Header#NEGATIVE_DIRECTION_PIN_0
+                                long Header#NEGATIVE_DIRECTION_PIN_1
+enablePin                       long Header#ENABLE_0, Header#ENABLE_1
+
+encoderPin                      byte Header#ENCODERS_PIN_0, Header#ENCODERS_PIN_1
+speedToUse                      byte DEFAULT_SPEED_TYPE
 activeDemo                      byte DISTANCE_TEST_DEMO 'TURN_TEST_DEMO 'DEFAULT_DEMO 'ARC_TEST_DEMO 'CAL_POS_PER_REV_DEMO 'CAL_DISTANCE_DEMO '
 demoFlag                        byte 0 ' set to 255 or -1 to continuously run demo
                                        ' other non-zero values will instuct the 
@@ -576,7 +629,7 @@ OBJ
   Header : "HeaderEddieAbHb25Encoders"                 ' uses one cog for music
   'Header : "HeaderEddieHbridgeEncoders"                 ' uses one cog
   
-  Encoders : "Quadrature_Encoder"                       ' uses one cog
+  Encoders : "QuadratureMotors"                         ' uses one cog
   Com : "Serial4PortLocks"                              ' uses one cog
   Ping : "EddiePingMonitor"                             ' uses one cog
   
@@ -650,8 +703,9 @@ PUB Main | rxCheck
       if killSwitchTimer ' if killSwitchTimer is zero don't check time
         if cnt - lastComTime > killSwitchTimer
           'ifnot pDRunning
-          Header.SetMotorPower(0, 0)
-          Header.SetMotorPower(1, 0)
+          'Header.SetMotorPower(1, 0)
+          longfill(@rampedPower, 0, 2)
+          Encoders.RefreshPower
           if debugFlag => KILL_SWITCH_DEBUG
             Com.Strse(debugCom, string(13, "Motors Stopped"))
           waitcnt(constant(_clkfreq / CONTROL_FREQUENCY) + cnt)
@@ -952,14 +1006,24 @@ PRI TempDebug(port) | side
 
       {'150102
       Com.Str(port, string(", integral = "))
-      Com.Dec(port, integral[side])
+      Com.Dec(port, integral[side])  }
+      
+      Com.Str(port, string(11, 13, "speedToUse = "))
+      Com.Str(port, FindString(@speedToUseTxt, speedToUse))
+      Com.Str(port, string(", motorSpeed = "))
+      Com.Dec(port, motorSpeed[side])
       Com.Str(port, string(11, 13, "motorPosition["))
       Com.Dec(port, side)
       Com.Str(port, string("] = "))
       Com.Dec(port, motorPosition[side])       
-      Com.Str(port, string(", motorSpeed = "))
-      Com.Dec(port, motorSpeed[side])
-        
+      Com.Str(port, string(", eddieSpeed = "))
+      Com.Dec(port, eddieSpeed[side])
+      Com.Str(port, string(11, 13, "currentSpeed ="))
+      Com.Dec(port, currentSpeed[side])       
+      Com.Str(port, string(", bufferedSpeed = "))
+      Com.Dec(port, bufferedSpeed[side])
+      
+    {    
     if debugFlag => PID_POSITION_DEBUG
       Com.Str(port, string(11, 13, "kProportional = "))
       Com.Dec(port, kProportional[side])   } '150102
@@ -1548,9 +1612,9 @@ PRI ParseOR | parameter[3], index
   return 0
   
 PRI ParseSZ | parameter[3]
-'' 15 Commands
+'' 16 Commands
 '' "SERVO", "SETV", "SGP", "SMALL", "SONG", "SPD", "SPNG", "STOP" ' 8
-'' "TRVL", "TURN", "VER", "VERB", "VOL", "WATCH", "X" ' 7
+'' "TRVL", "TURN", "USE", "VER", "VERB", "VOL", "WATCH", "X" ' 8
 
   if strcomp(@InputBuffer, string("SERVO"))        
     parameter[0] := ParseHex(NextParameter)
@@ -1661,6 +1725,10 @@ PRI ParseSZ | parameter[3]
     Travels(parameter[0] * Header#POSITIONS_PER_ROTATION / 720, {
     } parameter[0] * Header#POSITIONS_PER_ROTATION / -720, parameter[1], parameter[1])
  
+  elseif strcomp(@InputBuffer, string("USE"))          ' Command: Set verbose mode
+    parameter := ParseHex(NextParameter)
+    CheckLastParameter
+    speedToUse := parameter
   elseif strcomp(@InputBuffer, string("VER"))           ' Command: Respond with version number
     CheckLastParameter
     OutputHex(VERSION, 4)
@@ -1831,16 +1899,25 @@ PRI InterpolateMidVariables : side | difference  ' called from parsing cog
 PRI PDLoop : side | nextControlCycle
 '' Measure, set, and maintain wheel position
 
-  Encoders.Start(Header#ENCODERS_PIN, 2, 0, @motorPosition)
-  Header.StartMotors
+  if Header#REVERSE_LEFT_FLAG
+    Encoders.ReverseMotor(LEFT_MOTOR)
+  if Header#REVERSE_RIGHT_FLAG
+    Encoders.ReverseMotor(RIGHT_MOTOR)
+    
+  Encoders.StartEncoders(@encoderPin, @motorPosition, @transitionTime, @enablePin, {
+  } @positiveDirectionPin, @negativeDirectionPin, @rampedPower, @encoderDirection)
+              
+  'Encoders.Start(Header#ENCODERS_PIN, 2, 0, @motorPosition)
+
+  'Header.StartMotors
   
   nextControlCycle := cnt                                        ' Set up a timed loop
   repeat
     repeat side from LEFT_MOTOR to RIGHT_MOTOR
       waitcnt(nextControlCycle += DEFAULT_HALF_INTERVAL)
       PDIteration(side)                ' Service 
-      Header.SetMotorPower(side, rampedPower[side])
-      
+      'Header.SetMotorPower(side, rampedPower[side])
+      Encoders.RefreshPower
     bufferIndex++
     bufferIndex //= POSITION_BUFFER_SIZE
     
@@ -1850,9 +1927,15 @@ PRI PDIteration(side) | motorPositionSample, difference, limit, previousReachedF
   
   motorPositionSample := motorPosition[side] ' Sample at the beginning to remove jitter
  
-  motorSpeed[side] := motorPositionSample - motorPositionBuffer[side * POSITION_BUFFER_SIZE + bufferIndex]
+  eddieSpeed[side] := motorPositionSample - motorPositionBuffer[side * POSITION_BUFFER_SIZE + bufferIndex]
   motorPositionBuffer[side * POSITION_BUFFER_SIZE + bufferIndex] := motorPositionSample
 
+  ComputeEncoderSpeed(side)
+  if speedToUse == EDDIE_SPEED
+    motorSpeed[side] := eddieSpeed[side]
+  else
+    motorSpeed[side] := currentSpeed[side]
+    
   if motorSpeed[side] or rampedPower[side] == 0  ' Keep track of how long the motor hasn't been moving
     stillCnt[side] := 0
   else
@@ -2317,6 +2400,99 @@ PUB OrColors(firstLed, lastLed, localColor) : colorIndex
   repeat colorIndex from firstLed to lastLed
     fullBrightnessArray[colorIndex] |= localColor
 
+PUB TtaMethodSigned(N, X, D)   ' return X*N/D where all numbers and result are positive =<2^31
+
+  result := 1
+  if N < 0
+    -N
+    -result
+  if X < 0
+    -X
+    -result
+  if D < 0
+    -D
+    -result
+    
+  result *= TtaMethod(N, X, D)
+
+PUB TtaMethod(N, X, D)   ' return X*N/D where all numbers and result are positive =<2^31
+  return (N / D * X) + (binNormal(N//D, D, 31) ** (X*2))
+
+PUB BinNormal (y, x, b) : f                  ' calculate f = y/x * 2^b
+' b is number of bits
+' enter with y,x: {x > y, x < 2^31, y <= 2^31}
+' exit with f: f/(2^b) =<  y/x =< (f+1) / (2^b)
+' that is, f / 2^b is the closest appoximation to the original fraction for that b.
+  repeat b
+    y <<= 1
+    f <<= 1
+    if y => x    '
+      y -= x
+      f++
+  if y << 1 => x    ' Round off. In some cases better without.
+      f++
+
+PRI ComputeEncoderSpeed(channelIndex) '| adjustmentBits, adjustedTime 
+'' A "Period" is a half second amount of time.
+'' A "Cycle" is a full encoder cycle
+'' Todo count times a full cycle isn't received.
+'' Switch from full cycle monitoring to single tick
+'' monitoring at very low speeds.
+'' The data produced by this method is presently not
+'' used by the program.
+
+  'adjustmentBits := INITIAL_BIT_ADJUSTMENT
+  
+  altDataPtr[channelIndex] := Encoders.GetPointer(channelIndex)
+  {The act of requesting the pointer changes the address where
+  future writes will occur. This keeps the data located at
+  the returned pointer from being overwritten by the encoder
+  reading cog.
+  Data from the buffer may now be read without concern of it
+  being overwritten.
+  Both the last transition count with time and last full cycle
+  count with time are written to the buffer.
+  Encoder which aren't precisely 90 degrees out of phase
+  should benifit from being monitored by full cycles.}
+  
+  alternatingEncoder[channelIndex] := long[altDataPtr[channelIndex]]
+  alternatingTimeStamp[channelIndex] := long[altDataPtr[channelIndex] + 4]
+  alternatingFullCycle[channelIndex] := long[altDataPtr[channelIndex] + 8]
+  fullCycleTimeStamp[channelIndex] := long[altDataPtr[channelIndex] + 12]
+  
+  alternatingDeltaTime[channelIndex] := alternatingTimeStamp[channelIndex] - previousTimeStamp[channelIndex]
+  deltaPosition[channelIndex] := alternatingEncoder[channelIndex] - previousPosition[channelIndex]
+
+  if deltaPosition[channelIndex] and rampedPower[channelIndex]
+    stoppedMotorCount[channelIndex] := 0
+    currentSpeed[channelIndex] := ComputeSpeed(alternatingDeltaTime[channelIndex], {
+    } deltaPosition[channelIndex])
+  else
+    stoppedMotorCount[channelIndex]++
+    currentSpeed[channelIndex] := 0
+
+  halfSecondDeltaPosition[channelIndex] := alternatingEncoder[channelIndex] - {
+  } positionBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex]
+  positionBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex] := alternatingEncoder[channelIndex]
+   
+  halfSecondDeltaTime[channelIndex] := alternatingTimeStamp[channelIndex] - {
+  } timeBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex]
+  timeBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex] := alternatingTimeStamp[channelIndex]
+  
+  
+  ' The value "10" reduces the values sent to "ComputeSpeed" method to manageable
+  ' amounts. This is a hack and should be improved.
+  bufferedSpeed[channelIndex] := ComputeSpeed(halfSecondDeltaTime[channelIndex] / 10, {
+    } halfSecondDeltaPosition[channelIndex] / 10)
+    
+  previousTimeStamp[channelIndex] := alternatingTimeStamp[channelIndex]
+  previousPosition[channelIndex] := alternatingEncoder[channelIndex]
+
+PRI ComputeSpeed(deltaTime, localDeltaPosition) 
+
+  result := TtaMethodSigned(SPEED_NUMERATOR, localDeltaPosition, deltaTime * {
+  } ADJ_TO_TICKS_PER_HALF_SECOND)
+
 DAT
 
 prompt                          byte CR, 0
@@ -2345,7 +2521,9 @@ kpControlTypeTxt                byte "TARGET_DEPENDENT", 0
 comTxt                          byte "USB_COM", 0
                                 byte "XBEE_COM", 0
                                 byte "NO_ACTIVE_COM", 0
-                                
+
+speedToUseTxt                   byte "EXPERIMENTAL_SPEED", 0
+                                byte "EDDIE_SPEED", 0                               
 ' Active Parameter Text
 maxPowAccelTxt                  byte "maxPowAccel", 0 
 maxPosAccelTxt                  byte "maxPosAccel", 0

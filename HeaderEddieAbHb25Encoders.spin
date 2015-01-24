@@ -18,18 +18,24 @@ CON{{ ****** Public Notes ******
 CON '' Activity Board Constants
   
   ' Encoders
-  ENCODERS_PIN = 14
+  ENCODERS_PIN_0 = 14
+  ENCODERS_PIN_1 = 16
 
   ENABLE_0 = 12
   ENABLE_1 = 13
- 
+
+  POSITIVE_DIRECTION_PIN_0 = -1
+  POSITIVE_DIRECTION_PIN_1 = -1
+  NEGATIVE_DIRECTION_PIN_0 = -1
+  NEGATIVE_DIRECTION_PIN_1 = -1
+
   ' ADC (Activity Board)
   ADC_CS = 21                                        
   ADC_SCL = 20 
   ADC_DO = 19 
   ADC_DI = 18
 
-  
+ 
 CON 
  
   '' distance travelled per encoder tick = 2,455mm / 720 = 3.410mm
@@ -44,6 +50,9 @@ CON
   LEFT_MOTOR
   RIGHT_MOTOR
 
+  REVERSE_LEFT_FLAG = 0
+  REVERSE_RIGHT_FLAG = 0
+  
   ' Pin assignments
   ' Ping))) sensors
   PING_0 = 0                                            '' User changeable
@@ -89,20 +98,20 @@ OBJ
   '' The analog to digital converter object does not start a new cog.
   '' The ADC object is required to use the "ADC" command
   Adc : "ActivityBoardAdc"                              ' 4-channel 12-bits
-  Motors : "Servo32v9Shared"
+  'Motors : "Servo32v9Shared"
   Music : "s2_music"                                    ' uses one cog
   
 PUB InitAdc
 
   Adc.Init(ADC_CS, ADC_SCL, ADC_DI, ADC_DO)
     
-PUB StartMotors
+'PUB StartMotors
 
-  Motors.Start
+  'Motors.Start
 
-PUB SetMotorPower(side, power)
+'PUB SetMotorPower(side, power)
 
-  Motors.Set(enablePin[side], STOP_PULSE + (power / SCALED_POWER))
+  'Motors.Set(enablePin[side], STOP_PULSE + (power / SCALED_POWER))
 
 PUB ReadAdc(ch)
 
@@ -120,7 +129,3 @@ PUB PlaySong(songId, tempo)
 PUB SetVolume(volume)
 
   Music.SetVolume(volume)
-  
-DAT
-
-enablePin     long ENABLE_0, ENABLE_1
