@@ -11,23 +11,9 @@ CON{{ ****** Public Notes ******
   control board and the Activity Board with the HB-25 motor controllers, some
   of the objects have been moved into a Header object. This allows one to
   select the hardward used my selecting the appropriate header file.
-
-  Presently there are two possible header files to choose from. The file
-  "HeaderEddieAbHb25Encodersxxxxxxx" is to be used with an Activity Board
-  and HB-25 motor controllers. The header file "HeaderEddieHbridgeEncodersxxxxxxx"
-  should be used when using the Eddie Control board.
-
-  Programs named "EddieBxxxxxxx" will have firmware configured for the Eddie
-  Control Board and Programs named "EddieCxxxxxxx" will have firmware configured
-  for the Propeller Activity Board and HB-25 motor controllers.
   
   In order to make it easier to experiment with different settings used by the
   control algorithm, additonal commands have been added to the software.
-
-  The encoder object "FourQuadratureMotors141224a" should make it possible to
-  measure the speed of the wheels with greater accuracy than was possible with
-  earlier versions of the firmware. The features of the object allowing greater
-  accuracy are presently not used.
 
   Also to aid in the debugging process, some parameters will become "active
   parameters" when their corresponding command is issued. When a parameter is

@@ -65,8 +65,8 @@ CON
   USB_RX = 31
   
   ' PROP TO PROP COMMUNICATION
-  ALT_TX = 10                                          '' User changeable
-  ALT_RX = 11                                          '' User changeable
+  ALT_TX = 6 '10                                          '' User changeable
+  ALT_RX = 7 '11                                          '' User changeable
 
   ' Master GPIO mask (Only high pins can be set as outputs)
   OUTPUTABLE = %00001100_00000000_00000011_11111111 
@@ -80,11 +80,14 @@ CON
   BAUDMODE = %0000
   USB_BAUD = 115_200                                    '' User changeable
   ALT_BAUD = 115_200                                    '' User changeable
-
+  PROP_TO_PROP_BAUD = 9_600
+  
   MAX_POWER = 7520
 
   SCALED_POWER = MAX_POWER / 500
- 
+
+  SPEED_SCALER = 100
+  
   STOP_PULSE = 1_500
 
   TOO_SMALL_TO_FIX = 0                                  '' User changeable

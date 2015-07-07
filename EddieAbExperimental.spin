@@ -184,8 +184,8 @@ CON{{ ****** Public Notes ******
 }}
 CON 
   
-  _CLKMODE = XTAL1 + PLL16X
-  _CLKFREQ = 80_000_000
+  _clkmode = xtal1 + pll16x
+  _clkfreq = 80_000_000
 
   MICROSECOND = _CLKFREQ / 1_000_000
   ' Settings
@@ -246,6 +246,9 @@ CON
   BAUDMODE = Header#BAUDMODE
   USB_BAUD = Header#USB_BAUD
   XBEE_BAUD = 9_600
+
+  PROP_TO_PROP_TX = Header#ALT_TX '6
+  PROP_TO_PROP_RX = Header#ALT_RX '7
   
   'PROCESSRATE = _CLKFREQ / 16_000
   'TIMEOUT       = 10
@@ -319,9 +322,9 @@ CON
   '' arcs should be improved.
            
   CONTROL_FREQUENCY = 50 ' Iterations per second
-  HALF_SEC = CONTROL_FREQUENCY / 2   ' Iterations per unit 'dwd 141118b good name?
-  'HALF_SEC changed to in some locations.
-  POSITION_BUFFER_SIZE = CONTROL_FREQUENCY / 2
+  MAX_CYCLES_TO_MEASURE_SPEED = CONTROL_FREQUENCY / 2   ' Iterations per unit 'dwd 141118b good name?
+  'MAX_CYCLES_TO_MEASURE_SPEED changed to in some locations.
+  POSITION_BUFFER_SIZE = MAX_CYCLES_TO_MEASURE_SPEED
 
   SPEED_NUMERATOR = 2_000_000_000 ' largest manageable number
   ' 25 seconds of clock ticks
@@ -338,7 +341,7 @@ CON
   '' better control of the motors.
   
   'X_BUFFER_BITS = 4
-  X_BUFFER_SIZE = HALF_SEC '1 << X_BUFFER_BITS
+  X_BUFFER_SIZE = MAX_CYCLES_TO_MEASURE_SPEED '1 << X_BUFFER_BITS
   'X_BUFFER_LIMIT = X_BUFFER_SIZE - 1
 
   'BUFFER_BITS = 4
@@ -436,7 +439,7 @@ CON '' Debug Levels
 
 CON 
 
-  #0, USB_COM, XBEE_COM, NO_ACTIVE_COM
+  #0, USB_COM, XBEE_COM, PROP_TO_PROP_COM, NO_ACTIVE_COM
   DEFAULT_CONTROL_COM = NO_ACTIVE_COM
   DEFAULT_DEBUG_COM = XBEE_COM 'USB_COM
   
@@ -511,14 +514,14 @@ VAR
   long encoderDirection[Encoders#TOTAL_ENCODERS] ' Tis will be either 1 or -1 depending on 
                                                  ' which way the motor is turning. I'm not 
                                                  ' surewhy I added this.
+  long pad3[64]                                               
   long targetPower[2]
   long integral[2]
   long targetSpeed[2]
   long motorPosition[2], motorSpeed[2]
   long transitionTime[Encoders#TOTAL_ENCODERS]
-  
+  long pad1[32]
   long motorPositionBuffer[2 * POSITION_BUFFER_SIZE]
-  long bufferIndex
   long motPosOffset[2] ' Offset between Physical and internal motor position
   long midPosition[2] ' Position the PD loop is attempting to hold
   long midPosAcc[2] ' fractional part  
@@ -544,6 +547,7 @@ VAR
   'long xPeriodSpeed[Encoders#TOTAL_ENCODERS]
   'long xAverageSpeed[Encoders#TOTAL_ENCODERS], xBufferTotal[Encoders#TOTAL_ENCODERS]
   long deltaPosition[Encoders#TOTAL_ENCODERS], currentSpeed[Encoders#TOTAL_ENCODERS]
+  long scaledSpeed[Encoders#TOTAL_ENCODERS]
   'long xPeriodDistance[Encoders#TOTAL_ENCODERS], xPeriodTime[Encoders#TOTAL_ENCODERS]
   'long xPreviousCycleTime[Encoders#TOTAL_ENCODERS]
   long fullCycleTimeStamp[Encoders#TOTAL_ENCODERS]
@@ -561,12 +565,18 @@ VAR
   long altDataPtr[Encoders#TOTAL_ENCODERS]
   long bufferedSpeed[Encoders#TOTAL_ENCODERS]
   long eddieSpeed[Encoders#TOTAL_ENCODERS]
+  long zLedPrimaryPtr[3], zLedSecondaryPtr[3]  'keep together and in order
+  long zPreviousPrimary[3], zPreviousSecondary[3] 'keep together and in order
+  long errorCount
+  
   byte stillStoppedFlag[Encoders#TOTAL_ENCODERS]
   byte positionErrorFlag[2]
   byte pingsInUse, maxPingIndex
   byte inputBuffer[BUFFER_LENGTH], outputBuffer[BUFFER_LENGTH] 
   byte inputIndex, parseIndex, outputIndex
   byte midReachedSetFlag[2]
+  byte xBufferIndex, bufferIndex
+  byte zDecPointPri[3], zDecPointSec[3]
        
 DAT '' variables which my have non-zero initial values 
 
@@ -593,6 +603,7 @@ halfInterval                    long DEFAULT_HALF_INTERVAL
 directionFlag                   long 1[2], 1[10]
 errorScaler                     long DEFAULT_ERROR_SCALER
 direction                       long 1[2]
+cyclesToMeasureSpeed            long MAX_CYCLES_TO_MEASURE_SPEED
 DAT
 ' todo change this pins to bytes
 positiveDirectionPin            long Header#POSITIVE_DIRECTION_PIN_0
@@ -600,8 +611,10 @@ positiveDirectionPin            long Header#POSITIVE_DIRECTION_PIN_0
 negativeDirectionPin            long Header#NEGATIVE_DIRECTION_PIN_0
                                 long Header#NEGATIVE_DIRECTION_PIN_1
 enablePin                       long Header#ENABLE_0, Header#ENABLE_1
+pad2                            long 0[32]
 
 encoderPin                      byte Header#ENCODERS_PIN_0, Header#ENCODERS_PIN_1
+pad0                            byte 0[32]
 speedToUse                      byte DEFAULT_SPEED_TYPE
 activeDemo                      byte DISTANCE_TEST_DEMO 'TURN_TEST_DEMO 'DEFAULT_DEMO 'ARC_TEST_DEMO 'CAL_POS_PER_REV_DEMO 'CAL_DISTANCE_DEMO '
 demoFlag                        byte 0 ' set to 255 or -1 to continuously run demo
@@ -610,6 +623,7 @@ demoFlag                        byte 0 ' set to 255 or -1 to continuously run de
                                        ' the method "ScriptedProgram".
                                        
 debugFlag                       byte FULL_DEBUG
+propToPropFlag                  byte 1
 decInFlag                       byte 1 ' set to 1 to use decimal input rather an hexadecimal
 decOutFlag                      byte 1 ' set to 1 for decimal output rather an hexadecimal
 volume                          byte 30
@@ -618,7 +632,7 @@ pingPauseFlag                   byte 0
 controlCom                      byte DEFAULT_CONTROL_COM
 debugCom                        byte DEFAULT_DEBUG_COM                      
 mode                            byte 0                  ' Current mode of the control system
-verbose                         byte true 'false '      ' Verbosity level (Currently nonzero = verbose)
+verbose                         byte false '            ' Verbosity level (Currently nonzero = verbose)
 
 activeServo                     byte 6
 brightness                      byte DEFAULT_BRIGHTNESS
@@ -633,7 +647,7 @@ OBJ
   Com : "Serial4PortLocks"                              ' uses one cog
   Ping : "EddiePingMonitor"                             ' uses one cog
   
-  Servo : "Servo32v9Shared"                             ' uses one cog
+  'Servo : "Servo32v9Shared"                             ' uses one cog
   Led : "jm_ws2812"                                     ' uses one cog
   
   'AltCom : "Serial4PortLocksA"                         ' uses one cog
@@ -645,16 +659,19 @@ OBJ
 PUB Main | rxCheck
 
   Com.Init
-  Com.AddPort(USB_COM, USB_RX, USB_TX, -1, -1, 0, BAUDMODE, USB_BAUD)
+  Com.AddPort(USB_COM, USB_RX, USB_TX, -1, -1, 0, BAUDMODE, 9600)'USB_BAUD)
   Com.AddPort(XBEE_COM, XBEE_RX, XBEE_TX, -1, -1, 0, BAUDMODE, XBEE_BAUD)
+  Com.AddPort(PROP_TO_PROP_COM, PROP_TO_PROP_RX, PROP_TO_PROP_TX, -1, -1, 0, BAUDMODE, {
+  } Header#PROP_TO_PROP_BAUD)
+ 
   Com.Start                                             'Start the ports
   {'**141220d  
   AltCom.Init
   AltCom.AddPort(0, Header#ALT_RX, Header#ALT_TX, -1, -1, 0, 0, Header#ALT_BAUD)
   AltCom.Start                                         'Start the ports    
   }'**141220d
-  
-  Servo.Start
+  ZSetup
+  'Servo.Start
   
   Header.InitAdc           
     
@@ -686,8 +703,24 @@ PUB Main | rxCheck
   activeParameter := @targetPower[RIGHT_MOTOR]
   activeParTxtPtr := @targetPowerRTxt
   lastPartialTime := lastComTime := cnt
+   
   repeat                                                ' Main loop (repeats forever)
+   
     repeat           ' Read a byte from the command UART
+
+      {ifnot inputIndex
+        TestAll
+      else}
+      if inputIndex
+        Com.Strs(USB_COM, string(11, 13, "inputIndex["))
+        Com.Dec(USB_COM, inputIndex - 1)
+        Com.Str(USB_COM, string("] = "))
+        SafeTx(USB_COM, inputBuffer[inputIndex - 1])
+        'Com.Hex(USB_COM, inputBuffer[inputIndex - 1], 2)
+        Com.Str(USB_COM, string(", debugCom = "))
+        Com.Dece(USB_COM, debugCom)
+
+        
       if demoFlag
         ScriptedProgram
         if demoFlag <> $FF
@@ -718,6 +751,10 @@ PUB Main | rxCheck
       if true 
         if debugFlag => MAIN_DEBUG
           TempDebug(debugCom)
+        if propToPropFlag
+          Com.Lock
+          ZSendLedData
+          Com.E
     while rxcheck < 0
        
     inputBuffer[inputIndex++] := rxcheck
@@ -797,41 +834,67 @@ PUB Main | rxCheck
           if debugFlag => INPUT_WARNINGS_DEBUG
             Com.Strs(debugCom, string(11, 13, 7, "Invalid Character Error = <$"))
             Com.Hex(debugCom, inputBuffer[inputIndex - 1], 2)
-            Com.Txe(debugCom, ">")
-            inputIndex--
-            waitcnt(clkfreq / 2 + cnt)
+            Com.Tx(debugCom, ">")
+            Com.Str(debugCom, string(", inputIndex = "))
+            Com.Dece(debugCom, inputIndex)
+            if inputIndex
+              inputIndex--
+            'waitcnt(clkfreq / 2 + cnt)
                       
-PRI CheckCom : rxCheck
+PRI ZSetup
+
+  zLedPrimaryPtr[0] := @gDifference
+  zDecPointPri[0] := 0
+  zLedSecondaryPtr[0] := @gDifference + 4
+  zDecPointSec[0] := 0
+  zLedPrimaryPtr[1] := @integral
+  zDecPointPri[1] := 0
+  zLedSecondaryPtr[1] := @integral + 4
+  zDecPointSec[1] := 0
+  zLedPrimaryPtr[2] := @scaledSpeed
+  zDecPointPri[2] := 2
+  zLedSecondaryPtr[2] := @scaledSpeed + 4
+  zDecPointSec[2] := 2 ' ** change to 2 or more
+
+PRI CheckCom : rxCheck | localIndex
 
   case controlCom
-    USB_COM:
+    USB_COM..PROP_TO_PROP_COM:
       Com.Lock
-      rxCheck := Com.RxCheck(USB_COM)
-      Com.E ' clear lock 
-    XBEE_COM:
-      Com.Lock
-      rxCheck := Com.RxCheck(XBEE_COM)
-      Com.E ' clear lock 
-    NO_ACTIVE_COM:
-            
-      Com.Lock
-      rxCheck := Com.RxCheck(USB_COM)
-      Com.E ' clear lock
-      if rxCheck == -1
-        Com.Lock
-        rxCheck := Com.RxCheck(XBEE_COM)
-        Com.E
-        if rxCheck <> -1
-          controlCom := XBEE_COM
-          debugCom := XBEE_COM
+      rxCheck := Com.RxCheck(controlCom)
+      'Com.E ' clear lock
+      Com.Str(USB_COM, string("RX on Com # "))
+      Com.Dec(USB_COM, controlCom)
+      Com.Str(USB_COM, string(" = "))
+      if result > 32 and result =< "~"
+        Com.Txe(USB_COM, result)
       else
-        controlCom := USB_COM
-        debugCom := USB_COM
+        Com.Str(USB_COM, string("<$"))
+        Com.Hex(USB_COM, result, 2)
+        Com.Txe(USB_COM, ">")
+      
+    NO_ACTIVE_COM:
+      repeat localIndex from 0 to PROP_TO_PROP_COM     
+        Com.Lock
+        rxCheck := Com.RxCheck(localIndex)
+        Com.E ' clear lock
+        if rxCheck <> -1
+          controlCom := localIndex
+          case controlCom
+            USB_COM, XBEE_COM:
+              debugCom := localIndex
+          Com.Strs(PROP_TO_PROP_COM, string("COM "))
+          Com.Dec(PROP_TO_PROP_COM, controlCom)
+          Com.Txe(PROP_TO_PROP_COM, 13)
+          quit
+      
   if rxCheck <> -1
     lastPartialTime := cnt
   elseif cnt - lastPartialTime > partialComTimeLimit
+    Com.Strs(USB_COM, string("Terminate Partial Message on Com # "))
+    Com.Dece(USB_COM, controlCom)
     case controlCom
-      USB_COM, XBEE_COM:
+      USB_COM, XBEE_COM, PROP_TO_PROP_COM:
         rxCheck := 13 ' force end of communication
         
 PRI UpdateActive(changeAmount)
@@ -839,7 +902,7 @@ PRI UpdateActive(changeAmount)
   if inputIndex == 1
     long[activeParameter] += changeAmount
     if activeParameter == @servoPosition
-      Servo.Set(activeServo, servoPosition)
+      '''Servo.Set(activeServo, servoPosition)
     elseif activeParameter == @controlFrequency
       halfInterval := clkfreq / controlFrequency / 2
     elseif activeParTxtPtr == @kProportionalTxt 
@@ -916,6 +979,9 @@ PRI ExecuteAndWait(pointer)
   repeat while motorSpeed[0] or motorSpeed[1] or {
   } ||gDifference[0] > Header#TOO_SMALL_TO_FIX or ||gDifference[1] > Header#TOO_SMALL_TO_FIX
     DisplayPositionError
+    Com.Lock
+    ZSendLedData
+    Com.E
   ' wait while motors are still turning and until the final destination is reached.
 
 PRI TempDebug(port) | side
@@ -936,8 +1002,8 @@ PRI TempDebug(port) | side
         OrColors(MAX_LED_INDEX + (freezeError[side]  / errorScaler) + 1, MAX_LED_INDEX, localColor) }
     
       
-  'if port <> USB_COM
-  '  return
+  if port <> USB_COM
+    Com.Strse(port, string(11, 13, "port <> USB_COM"))
               
   Com.Txs(port, 11)
   Com.Tx(port, 1) ' home
@@ -1136,6 +1202,38 @@ PUB SafeTx(port, character)
       Com.Hex(port, character, 2)
       Com.Tx(port, ">")
       
+PUB ZSendLedData | ledIndex
+'' Returns number of display commands sent.
+'' The debug lock should be set prior to calling this method.
+
+  Com.Tx(USB_COM, "z")
+  repeat result from 0 to 2
+    if zLedPrimaryPtr[ledIndex] <> zPreviousPrimary[ledIndex] or {
+      } zLedSecondaryPtr[ledIndex] <> zPreviousSecondary[ledIndex]
+      result++
+      if zPreviousSecondary[ledIndex]
+        result++
+        Com.Str(PROP_TO_PROP_COM, string("DISS "))
+        Com.Dec(PROP_TO_PROP_COM, 2 * ledIndex)
+        Com.Dec(PROP_TO_PROP_COM, long[zLedPrimaryPtr[ledIndex]])
+        Com.Dec(PROP_TO_PROP_COM, zDecPointPri[ledIndex * 2])
+        Com.Str(PROP_TO_PROP_COM, string(13, "DISS "))
+        Com.Dec(PROP_TO_PROP_COM, 2 * ledIndex + 1)
+        Com.Dec(PROP_TO_PROP_COM, long[zLedSecondaryPtr[ledIndex]])
+        Com.Dec(PROP_TO_PROP_COM, zDecPointSec[ledIndex])
+        Com.Tx(PROP_TO_PROP_COM, 13)      
+        Com.Dec(USB_COM, long[zLedPrimaryPtr[ledIndex]])
+        Com.Tx(USB_COM, ",")
+      else
+        Com.Str(PROP_TO_PROP_COM, string("DISL "))
+        Com.Dec(PROP_TO_PROP_COM, ledIndex)
+        Com.Dec(PROP_TO_PROP_COM, long[zLedPrimaryPtr[ledIndex]])
+        'Com.Dec(PROP_TO_PROP_COM, zDecPointPri[ledIndex])
+        Com.Tx(PROP_TO_PROP_COM, 13)
+        
+  if result    
+    longmove(@zPreviousPrimary, @zLedPrimaryPtr, 6)      
+  
 PRI Parse                                               '' Parse the command in the input buffer
 '' Since Spin only allows 16 "elseif" statements in a row, the parsing
 '' of the command is split into multiple lists of "elseif" conditions.
@@ -1158,10 +1256,10 @@ PRI Parse                                               '' Parse the command in 
   ' Check command against the following strings:
 
   case inputBuffer[0]
-    "A".."F":
-      ParseAF
-    "G".."I":
-      ParseGI
+    "A".."D":
+      ParseAD
+    "E".."I":
+      ParseEI
     "J", "K":
       ParseJK
     "L".."N":
@@ -1176,7 +1274,7 @@ PRI Parse                                               '' Parse the command in 
   lastComTime := cnt
   return 0
 
-PRI ParseAF | index, parameter[3]
+PRI ParseAD | index, parameter[3]
 '' 15 Commands 
 '' "ACC", "ADC", "ARC", "BIG", "BLNK", "BRT", "COLOR", "COLORS"  ' 8
 '' "DEBUG", "DECIN", "DECOUT", "DEMO", "DEMOID", "DIFF", "DIST" ' 7
@@ -1250,7 +1348,11 @@ PRI ParseAF | index, parameter[3]
     parameter := ParseHex(NextParameter)
     CheckLastParameter
     brightness := parameter
-    AdjustAndSet(@fullBrightnessArray, brightness, LEDS_IN_USE) 
+    AdjustAndSet(@fullBrightnessArray, brightness, LEDS_IN_USE)
+  elseif strcomp(@InputBuffer, string("BUFF"))        
+    parameter := ParseHex(NextParameter)
+    CheckLastParameter
+    cyclesToMeasureSpeed := 1 #> parameter <# MAX_CYCLES_TO_MEASURE_SPEED
   elseif strcomp(@InputBuffer, string("COLOR"))        
     parameter[0] := ParseHex(NextParameter)           
     parameter[1] := ReallyParseHex(NextParameter)    
@@ -1301,17 +1403,21 @@ PRI ParseAF | index, parameter[3]
     OutputHex(motorPosition[LEFT_MOTOR] + motPosOffset[LEFT_MOTOR], 8)
     OutputChr(" ")
     OutputHex(motorPosition[RIGHT_MOTOR] + motPosOffset[RIGHT_MOTOR], 8)
-  
   else
     abort @invalidCommand
 
   return 0
   
-PRI ParseGI | parameter[3]
+PRI ParseEI | parameter[3]
 '' 9 Commands
 '' "GO", "GOSPD", "GOX", "HEAD", "HIGH", "HIGHS", "HWVER", "IN", "INS" ' 9
 
-  if strcomp(@InputBuffer, string("GO"))          ' Command: Set the motors to a specified power
+  if strcomp(@InputBuffer, string("ERROR"))          ' Command: Respond with status of active PING))) sensors
+    CheckLastParameter          
+    if debugFlag => INPUT_WARNINGS_DEBUG
+      Com.Str(USB_COM, string(11, 13, 7, "errorCount = "))
+      Com.Dec(USB_COM, ++errorCount)
+  elseif strcomp(@InputBuffer, string("GO"))          ' Command: Set the motors to a specified power
     parameter[0] := ParseHex(NextParameter)           '   Read both parameters before processing them
     parameter[1] := ParseHex(NextParameter)           '   To prevent changes with a "Too few parameters" error
     CheckLastParameter
@@ -1623,7 +1729,7 @@ PRI ParseSZ | parameter[3]
     
     result := 1 << parameter[0]
     if result & SERVOABLE
-      Servo.Set(parameter[0], parameter[1])
+      '''Servo.Set(parameter[0], parameter[1])
       activeServo := parameter[0]
       servoPosition := parameter[1]
       activeParameter := @servoPosition
@@ -1682,8 +1788,8 @@ PRI ParseSZ | parameter[3]
           setPosition[RIGHT_MOTOR] := motorPosition[RIGHT_MOTOR] + parameter
         other:
           setPosition[RIGHT_MOTOR] := motorPosition[RIGHT_MOTOR]
-      decel[LEFT_MOTOR] := ||(-HALF_SEC * midVelocity[LEFT_MOTOR] * midVelocity[LEFT_MOTOR] / (midVelocity[LEFT_MOTOR] - HALF_SEC * ||(setPosition[LEFT_MOTOR] - motorPosition[LEFT_MOTOR])))
-      decel[RIGHT_MOTOR] := ||(-HALF_SEC * midVelocity[RIGHT_MOTOR] * midVelocity[RIGHT_MOTOR] / (midVelocity[RIGHT_MOTOR] - HALF_SEC * ||(setPosition[RIGHT_MOTOR] - motorPosition[RIGHT_MOTOR])))
+      decel[LEFT_MOTOR] := ||(-MAX_CYCLES_TO_MEASURE_SPEED * midVelocity[LEFT_MOTOR] * midVelocity[LEFT_MOTOR] / (midVelocity[LEFT_MOTOR] - MAX_CYCLES_TO_MEASURE_SPEED * ||(setPosition[LEFT_MOTOR] - motorPosition[LEFT_MOTOR])))
+      decel[RIGHT_MOTOR] := ||(-MAX_CYCLES_TO_MEASURE_SPEED * midVelocity[RIGHT_MOTOR] * midVelocity[RIGHT_MOTOR] / (midVelocity[RIGHT_MOTOR] - MAX_CYCLES_TO_MEASURE_SPEED * ||(setPosition[RIGHT_MOTOR] - motorPosition[RIGHT_MOTOR])))
       longfill(@stillCnt, 0, 2)
       mode := STOPPING
     else                                              '   For a zero stopping distance:
@@ -1903,10 +2009,10 @@ PRI PDLoop : side | nextControlCycle
     Encoders.ReverseMotor(LEFT_MOTOR)
   if Header#REVERSE_RIGHT_FLAG
     Encoders.ReverseMotor(RIGHT_MOTOR)
-    
+  {  
   Encoders.StartEncoders(@encoderPin, @motorPosition, @transitionTime, @enablePin, {
   } @positiveDirectionPin, @negativeDirectionPin, @rampedPower, @encoderDirection)
-              
+   }           
   'Encoders.Start(Header#ENCODERS_PIN, 2, 0, @motorPosition)
 
   'Header.StartMotors
@@ -1920,6 +2026,8 @@ PRI PDLoop : side | nextControlCycle
       Encoders.RefreshPower
     bufferIndex++
     bufferIndex //= POSITION_BUFFER_SIZE
+    xBufferIndex++
+    xBufferIndex //= cyclesToMeasureSpeed
     
 PRI PDIteration(side) | motorPositionSample, difference, limit, previousReachedFlag
 '' Read the wheel's speed and position, and set its power
@@ -1971,17 +2079,17 @@ PRI PDIteration(side) | motorPositionSample, difference, limit, previousReachedF
       rampedPower[side] += -maxPowAccel #> (targetPower[side] - rampedPower[side]) <# maxPowAccel
       
     SPEED:                      ' Maintain the motors at a set velocity
-      ' midVelocity / HALF_SEC approaches targetSpeed as limited by maxPosAccel
+      ' midVelocity / MAX_CYCLES_TO_MEASURE_SPEED approaches targetSpeed as limited by maxPosAccel
       midVelAcc[side] += -activePositionAcceleration[side] #> {
-      }(targetSpeed[side] - midVelocity[side]) * HALF_SEC - midVelAcc[side] {
+      }(targetSpeed[side] - midVelocity[side]) * MAX_CYCLES_TO_MEASURE_SPEED - midVelAcc[side] {
       } <# activePositionAcceleration[side]
-      midVelocity[side] += midVelAcc[side] / HALF_SEC
-      midVelAcc[side] //= HALF_SEC
+      midVelocity[side] += midVelAcc[side] / MAX_CYCLES_TO_MEASURE_SPEED
+      midVelAcc[side] //= MAX_CYCLES_TO_MEASURE_SPEED
 
-      ' midPosition / HALF_SEC increases by midVelocity / 25 positions per half second
+      ' midPosition / MAX_CYCLES_TO_MEASURE_SPEED increases by midVelocity / 25 positions per half second
       midPosAcc[side] += midVelocity[side]                             
-      midPosition[side] += midPosAcc[side] / HALF_SEC
-      midPosAcc[side] //= HALF_SEC
+      midPosition[side] += midPosAcc[side] / MAX_CYCLES_TO_MEASURE_SPEED
+      midPosAcc[side] //= MAX_CYCLES_TO_MEASURE_SPEED
 
       ' Measure motors physical distance from the set point
       difference := midPosition[side] - motorPositionSample
@@ -2002,14 +2110,14 @@ PRI PDIteration(side) | motorPositionSample, difference, limit, previousReachedF
       rampedPower[side] += -maxPowAccel #> (targetPower[side] - rampedPower[side]) <# maxPowAccel
 
     STOPPING:                   ' Slow to a stop at a set position
-      ' midPosition / HALF_SEC approaches setPosition as limited by the deceleration curve
-      ' dwd 141118b, HALF_SEC is the value 25 since the control cycle occurs 50 times a second
+      ' midPosition / MAX_CYCLES_TO_MEASURE_SPEED approaches setPosition as limited by the deceleration curve
+      ' dwd 141118b, MAX_CYCLES_TO_MEASURE_SPEED is the value 25 since the control cycle occurs 50 times a second
       ' there are 25 control cycles in half a second.
      
-      limit := ^^(constant(8 * HALF_SEC * HALF_SEC) * (setPosition[side] - midPosition[side])/ decel ) * decel / 2
-      midPosAcc[side] += -limit #> (setPosition[side] - midPosition[side]) * constant(HALF_SEC * HALF_SEC) + midPosAcc[side] <# limit
-      midPosition[side] += midPosAcc[side] / constant(HALF_SEC * HALF_SEC)
-      midPosAcc[side] //= constant(HALF_SEC * HALF_SEC)
+      limit := ^^(constant(8 * MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED) * (setPosition[side] - midPosition[side])/ decel ) * decel / 2
+      midPosAcc[side] += -limit #> (setPosition[side] - midPosition[side]) * constant(MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED) + midPosAcc[side] <# limit
+      midPosition[side] += midPosAcc[side] / constant(MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED)
+      midPosAcc[side] //= constant(MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED)
 
       ' Measure motors physical distance from the set point
       difference := midPosition[side] - motorPositionSample
@@ -2032,25 +2140,25 @@ PRI PDIteration(side) | motorPositionSample, difference, limit, previousReachedF
          
       ' Measure motors physical distance from the set point
 
-      ' midVelocity / HALF_SEC approaches targetSpeed as limited
+      ' midVelocity / MAX_CYCLES_TO_MEASURE_SPEED approaches targetSpeed as limited
       'by maxPosAccel / CONTROL_FREQUENCY
       midVelAcc[side] += -activePositionAcceleration[side] #> {
-      } (targetSpeed[side] - midVelocity[side]) * HALF_SEC - midVelAcc[side] <# {
+      } (targetSpeed[side] - midVelocity[side]) * MAX_CYCLES_TO_MEASURE_SPEED - midVelAcc[side] <# {
       } activePositionAcceleration[side]
       
-      midVelocity[side] += midVelAcc[side] / HALF_SEC 
-      midVelAcc[side] //= HALF_SEC 
+      midVelocity[side] += midVelAcc[side] / MAX_CYCLES_TO_MEASURE_SPEED 
+      midVelAcc[side] //= MAX_CYCLES_TO_MEASURE_SPEED 
        
       ' midPosition approaches setPosition as limited by the deceleration curve
-      gLimit[side] := limit := midVelocity[side] * HALF_SEC + midVelAcc[side] {
-      }<# ^^(constant(8 * HALF_SEC * HALF_SEC) * (setPosition[side] - midPosition[side])/ {
+      gLimit[side] := limit := midVelocity[side] * MAX_CYCLES_TO_MEASURE_SPEED + midVelAcc[side] {
+      }<# ^^(constant(8 * MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED) * (setPosition[side] - midPosition[side])/ {
       } activePositionAcceleration[side]) * activePositionAcceleration[side] / 2
 
       midPosAcc[side] += -limit #> (setPosition[side] - midPosition[side]) * {
-      } constant(HALF_SEC * HALF_SEC) + midPosAcc[side] <# limit
+      } constant(MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED) + midPosAcc[side] <# limit
       
-      midPosition[side] += midPosAcc[side] / constant(HALF_SEC * HALF_SEC)
-      midPosAcc[side] //= constant(HALF_SEC * HALF_SEC)
+      midPosition[side] += midPosAcc[side] / constant(MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED)
+      midPosAcc[side] //= constant(MAX_CYCLES_TO_MEASURE_SPEED * MAX_CYCLES_TO_MEASURE_SPEED)
          
       ' Measure motors physical distance from the set point
       previousDifference[side] := gDifference[side]
@@ -2465,19 +2573,21 @@ PRI ComputeEncoderSpeed(channelIndex) '| adjustmentBits, adjustedTime
 
   if deltaPosition[channelIndex] and rampedPower[channelIndex]
     stoppedMotorCount[channelIndex] := 0
-    currentSpeed[channelIndex] := ComputeSpeed(alternatingDeltaTime[channelIndex], {
+    scaledSpeed[channelIndex] := ComputeSpeed(alternatingDeltaTime[channelIndex] / Header#SPEED_SCALER, {
     } deltaPosition[channelIndex])
+     
+    currentSpeed[channelIndex] := scaledSpeed[channelIndex] / Header#SPEED_SCALER
   else
     stoppedMotorCount[channelIndex]++
     currentSpeed[channelIndex] := 0
 
   halfSecondDeltaPosition[channelIndex] := alternatingEncoder[channelIndex] - {
-  } positionBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex]
-  positionBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex] := alternatingEncoder[channelIndex]
+  } positionBuffer[cyclesToMeasureSpeed * channelIndex + xBufferIndex]
+  positionBuffer[cyclesToMeasureSpeed * channelIndex + xBufferIndex] := alternatingEncoder[channelIndex]
    
   halfSecondDeltaTime[channelIndex] := alternatingTimeStamp[channelIndex] - {
-  } timeBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex]
-  timeBuffer[POSITION_BUFFER_SIZE * channelIndex + bufferIndex] := alternatingTimeStamp[channelIndex]
+  } timeBuffer[cyclesToMeasureSpeed * channelIndex + xBufferIndex]
+  timeBuffer[cyclesToMeasureSpeed * channelIndex + xBufferIndex] := alternatingTimeStamp[channelIndex]
   
   
   ' The value "10" reduces the values sent to "ComputeSpeed" method to manageable
@@ -2493,12 +2603,22 @@ PRI ComputeSpeed(deltaTime, localDeltaPosition)
   result := TtaMethodSigned(SPEED_NUMERATOR, localDeltaPosition, deltaTime * {
   } ADJ_TO_TICKS_PER_HALF_SECOND)
 
+PUB TestAll
+
+
+  Com.Str(PROP_TO_PROP_COM, string("TEST", 13))
+
+  Com.Str(XBEE_COM, string("TEST", 13))
+
+  Com.Str(USB_COM, string("TEST", 13))
+
+    
 DAT
 
 prompt                          byte CR, 0
 checkSumPrompt
 'nullString                      byte 0
-nack                            byte "ERROR", 0
+nack                            byte "ERROR", 13, 0
 overflow                        byte " - Overflow", 0
 badChecksum                     byte " - Bad checksum", 0
 invalidCommand                  byte " - Invalid command", 0
