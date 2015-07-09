@@ -1,7 +1,14 @@
 EddieFirmware
 =============
 
-Eddie firmware for both the original Eddie control board and the Propeller Activity Board.
+Eddie firmware for both the original Eddie Control Board and the Propeller Activity Board.
+
+If you're using the original Eddie Control Board, download the archive "Eddie - Archive [Date ...".
+If you're using a Propeller Activity Board with HB-25 motor controllers then download "EddieActivityBoard - Archive [Date ...".
+Unzip the archive in an appropriate folder. After installing the Propeller Tool or other programming environment capable of compiling Spin code, double click the top object of the archive. The top object will either be "Eddie.spin" or "EddieActivityBoard.spin" depending on which archive you downloaded.
+Press F11 to load the program into your board's EEPROM. The robot should then be ready to receive commands as explained in the comments of the top object. Additional instructions are available from Eddie Wiki.
+http://wiki.ros.org/eddiebot
+The GitHub link at on the Wiki points to the old version of the firmware. I need to figure out how to get this link updated.
 
 The file "Eddie.spin" is the top object of the code for use with the original Eddie control board. 
 The file "EddieActivityBoard.spin" is for use when a robot is to be controlled with a Propeller Activity Board.
