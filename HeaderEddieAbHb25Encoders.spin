@@ -18,24 +18,18 @@ CON{{ ****** Public Notes ******
 CON '' Activity Board Constants
   
   ' Encoders
-  ENCODERS_PIN_0 = 14
-  ENCODERS_PIN_1 = 16
+  ENCODERS_PIN = 14
 
   ENABLE_0 = 12
   ENABLE_1 = 13
-
-  POSITIVE_DIRECTION_PIN_0 = -1
-  POSITIVE_DIRECTION_PIN_1 = -1
-  NEGATIVE_DIRECTION_PIN_0 = -1
-  NEGATIVE_DIRECTION_PIN_1 = -1
-
+ 
   ' ADC (Activity Board)
   ADC_CS = 21                                        
   ADC_SCL = 20 
   ADC_DO = 19 
   ADC_DI = 18
 
- 
+  
 CON 
  
   '' distance travelled per encoder tick = 2,455mm / 720 = 3.410mm
@@ -50,9 +44,6 @@ CON
   LEFT_MOTOR
   RIGHT_MOTOR
 
-  REVERSE_LEFT_FLAG = 0
-  REVERSE_RIGHT_FLAG = 0
-  
   ' Pin assignments
   ' Ping))) sensors
   PING_0 = 0                                            '' User changeable
@@ -65,8 +56,8 @@ CON
   USB_RX = 31
   
   ' PROP TO PROP COMMUNICATION
-  ALT_TX = 6 '10                                          '' User changeable
-  ALT_RX = 7 '11                                          '' User changeable
+  ALT_TX = 10                                          '' User changeable
+  ALT_RX = 11                                          '' User changeable
 
   ' Master GPIO mask (Only high pins can be set as outputs)
   OUTPUTABLE = %00001100_00000000_00000011_11111111 
@@ -80,41 +71,36 @@ CON
   BAUDMODE = %0000
   USB_BAUD = 115_200                                    '' User changeable
   ALT_BAUD = 115_200                                    '' User changeable
-  PROP_TO_PROP_BAUD = 9_600
-  
+
   MAX_POWER = 7520
 
   SCALED_POWER = MAX_POWER / 500
-
-  SPEED_SCALER = 100
-  
+ 
   STOP_PULSE = 1_500
 
   TOO_SMALL_TO_FIX = 0                                  '' User changeable
   DEFAULT_INTEGRAL_NUMERATOR = 200                      '' User changeable
-  DEFAULT_INTEGRAL_DENOMINATOR = 100                    '' User changeable              
-  DEFAULT_INTEGRAL_NUMERATOR_END = 100                  '' User changeable  
-  DEFAULT_INTEGRAL_DENOMINATOR_E = 100                  '' User changeable
+  DEFAULT_INTEGRAL_DENOMINATOR = 100                    '' User changeable
   
 OBJ
 
   '' The analog to digital converter object does not start a new cog.
   '' The ADC object is required to use the "ADC" command
   Adc : "ActivityBoardAdc"                              ' 4-channel 12-bits
-  'Motors : "Servo32v9Shared"
+  Motors : "Servo32v9Shared"
   Music : "s2_music"                                    ' uses one cog
   
 PUB InitAdc
 
   Adc.Init(ADC_CS, ADC_SCL, ADC_DI, ADC_DO)
     
-'PUB StartMotors
+PUB StartMotors
 
-  'Motors.Start
+  Motors.Start
 
-'PUB SetMotorPower(side, power)
+PUB SetMotorPower(side, power)
 
-  'Motors.Set(enablePin[side], STOP_PULSE + (power / SCALED_POWER))
+  Motors.Set(enablePin[side], STOP_PULSE + (power / SCALED_POWER))
 
 PUB ReadAdc(ch)
 
@@ -132,3 +118,7 @@ PUB PlaySong(songId, tempo)
 PUB SetVolume(volume)
 
   Music.SetVolume(volume)
+  
+DAT
+
+enablePin     long ENABLE_0, ENABLE_1
